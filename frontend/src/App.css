@@ -256,6 +256,20 @@
   max-width: 940px;
 }
 
+.mandala-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.mandala-path {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
 .mandala-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -307,6 +321,12 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+.mandala-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  color: #1b4332;
 }
 
 .mandala-editor {
@@ -466,6 +486,11 @@
 
   .mandala-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mandala-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
