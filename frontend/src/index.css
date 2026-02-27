@@ -1,0 +1,46 @@
+:root {
+  font-family: 'Space Grotesk', 'Trebuchet MS', 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color: #1c1f1a;
+  background-color: #f6f4ef;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --surface-1: #fefcf6;
+  --surface-2: #f6f4ef;
+  --text-primary: #1c1f1a;
+  --text-muted: #6c6f66;
+  --border-subtle: rgba(28, 31, 26, 0.08);
+  --border-strong: rgba(28, 31, 26, 0.16);
+  --shadow-soft: 0 18px 45px rgba(9, 13, 8, 0.08);
+  --shadow-tight: 0 10px 20px rgba(9, 13, 8, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, #ffffff 0%, #f6f4ef 45%, #ece7de 100%);
+}
+
+p {
+  margin: 0;
+}
+
+button {
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+button:focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 2px;
+}
