@@ -252,6 +252,122 @@
   box-shadow: var(--shadow-tight);
 }
 
+.mandala-layout {
+  max-width: 940px;
+}
+
+.mandala-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.mandala-cell {
+  min-height: 170px;
+  border-radius: 18px;
+  border: 1px solid var(--border-subtle);
+  background: linear-gradient(135deg, #fffdf8, #f8f6f0);
+  box-shadow: var(--shadow-soft);
+  padding: 1.1rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.mandala-cell:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-tight);
+}
+
+.mandala-cell.is-core {
+  border-color: #1b4332;
+  background: linear-gradient(135deg, rgba(27, 67, 50, 0.15), rgba(8, 28, 21, 0.06));
+}
+
+.mandala-marker {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.mandala-title {
+  margin: 0;
+  font-size: 1.12rem;
+  line-height: 1.3;
+}
+
+.mandala-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.mandala-editor {
+  cursor: default;
+  transform: none;
+}
+
+.mandala-editor:hover {
+  transform: none;
+}
+
+.mandala-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mandala-input {
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: #fffdf8;
+  font-family: inherit;
+}
+
+.mandala-input:focus-visible {
+  outline: 2px solid #1b4332;
+  outline-offset: 1px;
+}
+
+.mandala-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.mandala-action {
+  border: 1px solid #1b4332;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  color: #fefae0;
+  background: #1b4332;
+  cursor: pointer;
+}
+
+.mandala-action.is-muted {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: #fffdf8;
+}
+
+.mandala-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .panel-card {
   padding: 1.6rem;
   border-radius: 18px;
@@ -295,6 +411,10 @@
 
   .app-main {
     padding: 2rem;
+  }
+
+  .mandala-cell {
+    min-height: 150px;
   }
 }
 
@@ -342,5 +462,15 @@
   .tab-bar {
     width: 100%;
     overflow-x: auto;
+  }
+
+  .mandala-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .mandala-grid {
+    grid-template-columns: 1fr;
   }
 }
