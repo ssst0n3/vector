@@ -271,6 +271,13 @@
   gap: 0.55rem;
 }
 
+.mandala-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
 .mandala-layer-switch {
   display: inline-flex;
   gap: 0.5rem;
@@ -605,6 +612,10 @@
 
   .mandala-toolbar-meta {
     align-items: flex-start;
+  }
+
+  .mandala-toolbar-actions {
+    justify-content: flex-start;
   }
 }
 

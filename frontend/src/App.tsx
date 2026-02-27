@@ -135,22 +135,29 @@ type RootCellId = RootCell['id']
 type PillarId = Exclude<RootCellId, 'objective'>
 type ActionMeta = (typeof ACTION_LAYOUT)[number]
 type ActionId = ActionMeta['id']
+type DrillPath = [PillarId, ...ActionId[]]
 
 type CellContent = {
   title: string
   subtitle: string
 }
 
+type DrillNode = {
+  core: CellContent
+  actions: Record<ActionId, CellContent>
+  children: Partial<Record<ActionId, DrillNode>>
+}
+
 type Ow64Board = {
   core: CellContent
   pillars: Record<PillarId, CellContent>
-  actions: Record<PillarId, Record<ActionId, CellContent>>
+  drills: Record<PillarId, DrillNode>
 }
 
 type EditingTarget =
   | { scope: 'core' }
   | { scope: 'pillar'; pillarId: PillarId }
-  | { scope: 'action'; pillarId: PillarId; actionId: ActionId }
+  | { scope: 'drillCore'; path: DrillPath }
 
 const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
@@ -175,6 +182,56 @@ const ACTION_META = ACTION_LAYOUT.reduce(
   {} as Record<ActionId, ActionMeta>,
 )
 
+const isSamePath = (left: DrillPath, right: DrillPath) => {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  return left.every((segment, index) => segment === right[index])
+}
+
+const getMarkerByPath = (path: DrillPath): string => {
+  const [pillarId, ...actionIds] = path
+  const segments = [PILLAR_META[pillarId].marker, ...actionIds.map((actionId) => ACTION_META[actionId].marker)]
+  return segments.join('-')
+}
+
+const getPathTitleSegments = (board: Ow64Board, path: DrillPath): string[] => {
+  const [pillarId, ...actionPath] = path
+  const titles = [board.pillars[pillarId].title]
+  let currentNode = board.drills[pillarId]
+
+  for (const actionId of actionPath) {
+    titles.push(currentNode.actions[actionId].title)
+    const nextNode = currentNode.children[actionId]
+    if (!nextNode) {
+      break
+    }
+    currentNode = nextNode
+  }
+
+  return titles
+}
+
+const createDrillNode = (seed: CellContent, seedMarker: string): DrillNode => {
+  const actions = ACTION_LAYOUT.reduce((acc, action) => {
+    acc[action.id] = {
+      title: `${seedMarker} ${action.marker}`,
+      subtitle: action.subtitle,
+    }
+    return acc
+  }, {} as Record<ActionId, CellContent>)
+
+  return {
+    core: {
+      title: seed.title,
+      subtitle: seed.subtitle,
+    },
+    actions,
+    children: {},
+  }
+}
+
 const createDefaultOw64Board = (): Ow64Board => {
   const core: CellContent = {
     title: OBJECTIVE_CELL?.title ?? '核心目标',
@@ -189,21 +246,21 @@ const createDefaultOw64Board = (): Ow64Board => {
     return acc
   }, {} as Record<PillarId, CellContent>)
 
-  const actions = PILLAR_CELLS.reduce((pillarAcc, cell) => {
-    pillarAcc[cell.id] = ACTION_LAYOUT.reduce((actionAcc, action) => {
-      actionAcc[action.id] = {
-        title: `${cell.marker} ${action.marker}`,
-        subtitle: action.subtitle,
-      }
-      return actionAcc
-    }, {} as Record<ActionId, CellContent>)
+  const drills = PILLAR_CELLS.reduce((pillarAcc, cell) => {
+    pillarAcc[cell.id] = createDrillNode(
+      {
+        title: cell.title,
+        subtitle: cell.subtitle,
+      },
+      cell.marker,
+    )
     return pillarAcc
-  }, {} as Record<PillarId, Record<ActionId, CellContent>>)
+  }, {} as Record<PillarId, DrillNode>)
 
   return {
     core,
     pillars,
-    actions,
+    drills,
   }
 }
 
@@ -228,18 +285,60 @@ const mergeBoardWithDefault = (incoming: unknown): Ow64Board => {
     defaults.core = parsed.core
   }
 
+  const mergeNode = (base: DrillNode, candidate: unknown): DrillNode => {
+    if (!candidate || typeof candidate !== 'object') {
+      return base
+    }
+
+    const parsedNode = candidate as Partial<DrillNode>
+    const nextNode: DrillNode = {
+      core: base.core,
+      actions: { ...base.actions },
+      children: { ...base.children },
+    }
+
+    if (isCellContent(parsedNode.core)) {
+      nextNode.core = parsedNode.core
+    }
+
+    for (const action of ACTION_LAYOUT) {
+      const incomingAction = parsedNode.actions?.[action.id]
+      if (isCellContent(incomingAction)) {
+        nextNode.actions[action.id] = incomingAction
+      }
+
+      const incomingChild = parsedNode.children?.[action.id]
+      if (incomingChild) {
+        nextNode.children[action.id] = mergeNode(
+          createDrillNode(nextNode.actions[action.id], `${nextNode.actions[action.id].title}`),
+          incomingChild,
+        )
+      }
+    }
+
+    return nextNode
+  }
+
   for (const pillar of PILLAR_CELLS) {
     const incomingPillar = parsed.pillars?.[pillar.id]
     if (isCellContent(incomingPillar)) {
       defaults.pillars[pillar.id] = incomingPillar
     }
+    defaults.drills[pillar.id].core = {
+      title: defaults.pillars[pillar.id].title,
+      subtitle: defaults.pillars[pillar.id].subtitle,
+    }
 
+    const legacyActions = (parsed as Partial<{ actions: Record<PillarId, Record<ActionId, CellContent>> }>).actions
     for (const action of ACTION_LAYOUT) {
-      const incomingAction = parsed.actions?.[pillar.id]?.[action.id]
-      if (isCellContent(incomingAction)) {
-        defaults.actions[pillar.id][action.id] = incomingAction
+      const legacyAction = legacyActions?.[pillar.id]?.[action.id]
+      if (isCellContent(legacyAction)) {
+        defaults.drills[pillar.id].actions[action.id] = legacyAction
       }
     }
+
+    const incomingDrill = (parsed as Partial<Ow64Board>).drills?.[pillar.id]
+    defaults.drills[pillar.id] = mergeNode(defaults.drills[pillar.id], incomingDrill)
   }
 
   return defaults
@@ -251,7 +350,8 @@ const migrateLegacyBoard = (incoming: unknown): Ow64Board => {
     return defaults
   }
 
-  const parsed = incoming as Partial<Record<RootCellId, Partial<CellContent>>>
+  const parsed = incoming as Partial<Record<RootCellId, Partial<CellContent>>> &
+    Partial<{ actions: Record<PillarId, Record<ActionId, Partial<CellContent>>> }>
   for (const cell of ROOT_CELLS) {
     const oldCell = parsed[cell.id]
     if (!oldCell) {
@@ -273,6 +373,27 @@ const migrateLegacyBoard = (incoming: unknown): Ow64Board => {
       defaults.pillars[cell.id] = {
         title: title ?? defaults.pillars[cell.id].title,
         subtitle: subtitle ?? defaults.pillars[cell.id].subtitle,
+      }
+      defaults.drills[cell.id].core = {
+        title: defaults.pillars[cell.id].title,
+        subtitle: defaults.pillars[cell.id].subtitle,
+      }
+    }
+  }
+
+  for (const pillar of PILLAR_CELLS) {
+    for (const action of ACTION_LAYOUT) {
+      const oldAction = parsed.actions?.[pillar.id]?.[action.id]
+      const title = typeof oldAction?.title === 'string' ? oldAction.title : null
+      const subtitle = typeof oldAction?.subtitle === 'string' ? oldAction.subtitle : null
+
+      if (!title && !subtitle) {
+        continue
+      }
+
+      defaults.drills[pillar.id].actions[action.id] = {
+        title: title ?? defaults.drills[pillar.id].actions[action.id].title,
+        subtitle: subtitle ?? defaults.drills[pillar.id].actions[action.id].subtitle,
       }
     }
   }
@@ -333,11 +454,73 @@ const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
     return left.pillarId === right.pillarId
   }
 
-  if (left.scope === 'action' && right.scope === 'action') {
-    return left.pillarId === right.pillarId && left.actionId === right.actionId
+  if (left.scope === 'drillCore' && right.scope === 'drillCore') {
+    return isSamePath(left.path, right.path)
   }
 
   return false
+}
+
+const getNodeByPath = (board: Ow64Board, path: DrillPath): DrillNode => {
+  const [pillarId, ...actionPath] = path
+  let currentNode = board.drills[pillarId]
+
+  for (const actionId of actionPath) {
+    const nextNode = currentNode.children[actionId]
+    if (!nextNode) {
+      return currentNode
+    }
+    currentNode = nextNode
+  }
+
+  return currentNode
+}
+
+const upsertNodeByPath = (node: DrillNode, actionPath: ActionId[], depth: number): DrillNode => {
+  if (depth >= actionPath.length) {
+    return node
+  }
+
+  const actionId = actionPath[depth]
+  const existingChild = node.children[actionId]
+  const seed = node.actions[actionId]
+  const marker = `${seed.title}`
+  const baseChild = existingChild ?? createDrillNode(seed, marker)
+  const nextChild = upsertNodeByPath(baseChild, actionPath, depth + 1)
+
+  if (existingChild === nextChild) {
+    return node
+  }
+
+  return {
+    ...node,
+    children: {
+      ...node.children,
+      [actionId]: nextChild,
+    },
+  }
+}
+
+const ensurePathExists = (board: Ow64Board, path: DrillPath): Ow64Board => {
+  const [pillarId, ...actionPath] = path
+  if (actionPath.length === 0) {
+    return board
+  }
+
+  const currentRootNode = board.drills[pillarId]
+  const nextRootNode = upsertNodeByPath(currentRootNode, actionPath, 0)
+
+  if (nextRootNode === currentRootNode) {
+    return board
+  }
+
+  return {
+    ...board,
+    drills: {
+      ...board.drills,
+      [pillarId]: nextRootNode,
+    },
+  }
 }
 
 const getContentByTarget = (board: Ow64Board, target: EditingTarget): CellContent => {
@@ -349,7 +532,7 @@ const getContentByTarget = (board: Ow64Board, target: EditingTarget): CellConten
     return board.pillars[target.pillarId]
   }
 
-  return board.actions[target.pillarId][target.actionId]
+  return getNodeByPath(board, target.path).core
 }
 
 const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: CellContent): Ow64Board => {
@@ -367,22 +550,79 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
         ...board.pillars,
         [target.pillarId]: content,
       },
+      drills: {
+        ...board.drills,
+        [target.pillarId]: {
+          ...board.drills[target.pillarId],
+          core: content,
+        },
+      },
     }
   }
 
+  const [pillarId, ...actionPath] = target.path
+
+  if (actionPath.length === 0) {
+    return {
+      ...board,
+      pillars: {
+        ...board.pillars,
+        [pillarId]: content,
+      },
+      drills: {
+        ...board.drills,
+        [pillarId]: {
+          ...board.drills[pillarId],
+          core: content,
+        },
+      },
+    }
+  }
+
+  const setNodeCore = (node: DrillNode, depth: number): DrillNode => {
+    if (depth === actionPath.length) {
+      return {
+        ...node,
+        core: content,
+      }
+    }
+
+    const actionId = actionPath[depth]
+    const childNode = node.children[actionId] ?? createDrillNode(node.actions[actionId], `${node.actions[actionId].title}`)
+    const nextChild = setNodeCore(childNode, depth + 1)
+
+    if (nextChild === childNode) {
+      return node
+    }
+
+    return {
+      ...node,
+      children: {
+        ...node.children,
+        [actionId]: nextChild,
+      },
+    }
+  }
+
+  const nextPillarRoot = setNodeCore(board.drills[pillarId], 0)
+
   return {
     ...board,
-    actions: {
-      ...board.actions,
-      [target.pillarId]: {
-        ...board.actions[target.pillarId],
-        [target.actionId]: content,
-      },
+    drills: {
+      ...board.drills,
+      [pillarId]: nextPillarRoot,
     },
   }
 }
 
-const getDefaultContentByTarget = (target: EditingTarget): CellContent => {
+const getDefaultContentByTarget = (target: EditingTarget, board: Ow64Board): CellContent => {
+  if (target.scope === 'drillCore' && target.path.length > 1) {
+    const parentPath = [target.path[0], ...target.path.slice(1, -1)] as DrillPath
+    const parentNode = getNodeByPath(board, parentPath)
+    const seedActionId = target.path[target.path.length - 1]
+    return parentNode.actions[seedActionId]
+  }
+
   const defaults = createDefaultOw64Board()
   return getContentByTarget(defaults, target)
 }
@@ -392,7 +632,7 @@ function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<ProjectId>('atlas')
   const [activeTab, setActiveTab] = useState<ProjectTabId>('mandala')
   const [activeLayer, setActiveLayer] = useState<MandalaLayer>('root')
-  const [activePillarId, setActivePillarId] = useState<PillarId | null>(null)
+  const [drillPath, setDrillPath] = useState<DrillPath | null>(null)
   const [boardByProject, setBoardByProject] = useState<Record<ProjectId, Ow64Board>>(() => {
     return PROJECTS.reduce((acc, project) => {
       acc[project.id] = loadOw64Board(project.id)
@@ -410,7 +650,10 @@ function App() {
 
   const currentBoard = boardByProject[selectedProjectId]
   const activeTabInfo = PROJECT_TABS.find((tab) => tab.id === activeTab)
-  const activeDrillPillarId = activePillarId ?? PILLAR_CELLS[0].id
+  const activeDrillPath = drillPath ?? ([PILLAR_CELLS[0].id] as DrillPath)
+  const activeDrillPillarId = activeDrillPath[0]
+  const activeDrillNode = getNodeByPath(currentBoard, activeDrillPath)
+  const activeDrillTitleSegments = getPathTitleSegments(currentBoard, activeDrillPath)
 
   const resetEditingDraft = () => {
     setEditingTarget(null)
@@ -420,7 +663,7 @@ function App() {
 
   const resetMandalaLayer = () => {
     setActiveLayer('root')
-    setActivePillarId(null)
+    setDrillPath(null)
   }
 
   const handleViewChange = (nextView: ViewMode) => {
@@ -492,7 +735,7 @@ function App() {
   }
 
   const handleResetTarget = (target: EditingTarget) => {
-    const defaultContent = getDefaultContentByTarget(target)
+    const defaultContent = getDefaultContentByTarget(target, currentBoard)
 
     setBoardByProject((prev) => {
       const updatedBoard = setContentByTarget(prev[selectedProjectId], target, defaultContent)
@@ -513,7 +756,39 @@ function App() {
   const handleOpenPillar = (pillarId: PillarId) => {
     resetEditingDraft()
     setActiveLayer('pillar')
-    setActivePillarId(pillarId)
+    setDrillPath([pillarId] as DrillPath)
+  }
+
+  const handleDrillDeeper = (actionId: ActionId) => {
+    resetEditingDraft()
+    const nextPath = [...activeDrillPath, actionId] as DrillPath
+
+    setBoardByProject((prev) => {
+      const ensuredBoard = ensurePathExists(prev[selectedProjectId], nextPath)
+      if (ensuredBoard === prev[selectedProjectId]) {
+        return prev
+      }
+
+      const next = {
+        ...prev,
+        [selectedProjectId]: ensuredBoard,
+      }
+
+      persistOw64Board(selectedProjectId, ensuredBoard)
+      return next
+    })
+
+    setActiveLayer('pillar')
+    setDrillPath(nextPath)
+  }
+
+  const handleBackOneLevel = () => {
+    if (!drillPath || drillPath.length <= 1) {
+      return
+    }
+
+    resetEditingDraft()
+    setDrillPath([drillPath[0], ...drillPath.slice(1, -1)] as DrillPath)
   }
 
   const handleMandalaLayerChange = (nextLayer: MandalaLayer) => {
@@ -526,7 +801,7 @@ function App() {
 
     if (nextLayer === 'pillar') {
       setActiveLayer('pillar')
-      setActivePillarId((prev) => prev ?? PILLAR_CELLS[0].id)
+      setDrillPath((prev) => prev ?? ([PILLAR_CELLS[0].id] as DrillPath))
       return
     }
 
@@ -692,11 +967,18 @@ function App() {
 
                     {activeLayer === 'pillar' ? (
                       <div className="mandala-toolbar-meta">
-                        <button type="button" className="ghost-button" onClick={handleBackToRoot}>
-                          返回 OW9 主盘
-                        </button>
+                        <div className="mandala-toolbar-actions">
+                          {activeDrillPath.length > 1 && (
+                            <button type="button" className="ghost-button" onClick={handleBackOneLevel}>
+                              返回上一级
+                            </button>
+                          )}
+                          <button type="button" className="ghost-button" onClick={handleBackToRoot}>
+                            返回 OW9 主盘
+                          </button>
+                        </div>
                         <p className="mandala-path">
-                          OW64 / {PILLAR_META[activeDrillPillarId].marker} {currentBoard.pillars[activeDrillPillarId].title}
+                          OW64 / {getMarkerByPath(activeDrillPath)} / {activeDrillTitleSegments.join(' / ')}
                         </p>
                       </div>
                     ) : activeLayer === 'overview' ? (
@@ -756,10 +1038,13 @@ function App() {
                                   const target: EditingTarget =
                                     gridItem.type === 'center'
                                       ? { scope: 'pillar', pillarId }
-                                      : { scope: 'action', pillarId, actionId: gridItem.actionId }
+                                      : { scope: 'drillCore', path: [pillarId] as DrillPath }
                                   const marker =
                                     gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
-                                  const content = getContentByTarget(currentBoard, target)
+                                  const content =
+                                    gridItem.type === 'center'
+                                      ? getContentByTarget(currentBoard, target)
+                                      : currentBoard.drills[pillarId].actions[gridItem.actionId]
 
                                   return (
                                     <div
@@ -874,87 +1159,97 @@ function App() {
 
                       {activeLayer === 'pillar' &&
                         PILLAR_GRID_LAYOUT.map((gridItem) => {
-                          const target: EditingTarget =
-                            gridItem.type === 'center'
-                              ? { scope: 'pillar', pillarId: activeDrillPillarId }
-                              : { scope: 'action', pillarId: activeDrillPillarId, actionId: gridItem.actionId }
+                          const centerTarget: EditingTarget = { scope: 'drillCore', path: activeDrillPath }
 
-                          const marker =
-                            gridItem.type === 'center'
-                              ? PILLAR_META[activeDrillPillarId].marker
-                              : ACTION_META[gridItem.actionId].marker
+                          if (gridItem.type === 'center') {
+                            const marker = getMarkerByPath(activeDrillPath)
+                            const content = activeDrillNode.core
+                            const editing = isSameTarget(editingTarget, centerTarget)
 
-                          const content = getContentByTarget(currentBoard, target)
-                          const editing = isSameTarget(editingTarget, target)
-
-                          if (editing) {
                             const inputIdSuffix =
-                              gridItem.type === 'center'
+                              activeDrillPath.length === 1
                                 ? `${activeDrillPillarId}-center`
-                                : `${activeDrillPillarId}-${gridItem.actionId}`
+                                : `${activeDrillPath.join('-')}-center`
+
+                            if (editing) {
+                              return (
+                                <div key={inputIdSuffix} className="mandala-cell mandala-editor is-core">
+                                  <span className="mandala-marker">{marker}</span>
+                                  <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
+                                    <span>目标</span>
+                                    <input
+                                      id={`title-${inputIdSuffix}`}
+                                      value={draftTitle}
+                                      onChange={(event) => setDraftTitle(event.target.value)}
+                                      className="mandala-input"
+                                      placeholder="输入目标"
+                                    />
+                                  </label>
+                                  <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
+                                    <span>说明</span>
+                                    <input
+                                      id={`subtitle-${inputIdSuffix}`}
+                                      value={draftSubtitle}
+                                      onChange={(event) => setDraftSubtitle(event.target.value)}
+                                      className="mandala-input"
+                                      placeholder="输入说明"
+                                    />
+                                  </label>
+                                  <div className="mandala-actions">
+                                    <button
+                                      type="button"
+                                      className="mandala-action"
+                                      onClick={handleSaveEdit}
+                                      disabled={!draftTitle.trim()}
+                                    >
+                                      保存
+                                    </button>
+                                    <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
+                                      取消
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="mandala-action is-muted"
+                                      onClick={() => handleResetTarget(centerTarget)}
+                                    >
+                                      恢复默认
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            }
 
                             return (
-                              <div
+                              <button
                                 key={inputIdSuffix}
-                                className={`mandala-cell mandala-editor ${gridItem.type === 'center' ? 'is-core' : ''}`}
+                                type="button"
+                                className="mandala-cell is-core"
+                                onClick={() => handleStartEdit(centerTarget)}
+                                aria-label={`${marker} ${content.title}`}
                               >
                                 <span className="mandala-marker">{marker}</span>
-                                <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
-                                  <span>目标</span>
-                                  <input
-                                    id={`title-${inputIdSuffix}`}
-                                    value={draftTitle}
-                                    onChange={(event) => setDraftTitle(event.target.value)}
-                                    className="mandala-input"
-                                    placeholder="输入目标"
-                                  />
-                                </label>
-                                <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
-                                  <span>说明</span>
-                                  <input
-                                    id={`subtitle-${inputIdSuffix}`}
-                                    value={draftSubtitle}
-                                    onChange={(event) => setDraftSubtitle(event.target.value)}
-                                    className="mandala-input"
-                                    placeholder="输入说明"
-                                  />
-                                </label>
-                                <div className="mandala-actions">
-                                  <button
-                                    type="button"
-                                    className="mandala-action"
-                                    onClick={handleSaveEdit}
-                                    disabled={!draftTitle.trim()}
-                                  >
-                                    保存
-                                  </button>
-                                  <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
-                                    取消
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="mandala-action is-muted"
-                                    onClick={() => handleResetTarget(target)}
-                                  >
-                                    恢复默认
-                                  </button>
-                                </div>
-                              </div>
+                                <h2 className="mandala-title">{content.title}</h2>
+                                <p className="mandala-subtitle">{content.subtitle}</p>
+                                <p className="mandala-hint">点击编辑当前下钻主题</p>
+                              </button>
                             )
                           }
 
+                          const marker = ACTION_META[gridItem.actionId].marker
+                          const content = activeDrillNode.actions[gridItem.actionId]
+
                           return (
                             <button
-                              key={gridItem.type === 'center' ? `${activeDrillPillarId}-center` : `${activeDrillPillarId}-${gridItem.actionId}`}
+                              key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
                               type="button"
-                              className={`mandala-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
-                              onClick={() => handleStartEdit(target)}
+                              className="mandala-cell"
+                              onClick={() => handleDrillDeeper(gridItem.actionId)}
                               aria-label={`${marker} ${content.title}`}
                             >
                               <span className="mandala-marker">{marker}</span>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
-                              <p className="mandala-hint">点击编辑</p>
+                              <p className="mandala-hint">点击继续下钻</p>
                             </button>
                           )
                         })}
