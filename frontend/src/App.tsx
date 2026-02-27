@@ -124,8 +124,10 @@ const PILLAR_GRID_LAYOUT = [
   { type: 'action', actionId: 'a8' },
 ] as const
 
+const OVERVIEW_GRID_LAYOUT = ['w1', 'w2', 'w3', 'w4', 'objective', 'w5', 'w6', 'w7', 'w8'] as const
+
 type ViewMode = 'home' | 'projects' | 'projectDetail'
-type MandalaLayer = 'root' | 'pillar'
+type MandalaLayer = 'root' | 'pillar' | 'overview'
 type ProjectId = (typeof PROJECTS)[number]['id']
 type ProjectTabId = (typeof PROJECT_TABS)[number]['id']
 type RootCell = (typeof ROOT_CELLS)[number]
@@ -408,6 +410,7 @@ function App() {
 
   const currentBoard = boardByProject[selectedProjectId]
   const activeTabInfo = PROJECT_TABS.find((tab) => tab.id === activeTab)
+  const activeDrillPillarId = activePillarId ?? PILLAR_CELLS[0].id
 
   const resetEditingDraft = () => {
     setEditingTarget(null)
@@ -511,6 +514,23 @@ function App() {
     resetEditingDraft()
     setActiveLayer('pillar')
     setActivePillarId(pillarId)
+  }
+
+  const handleMandalaLayerChange = (nextLayer: MandalaLayer) => {
+    resetEditingDraft()
+
+    if (nextLayer === 'root') {
+      resetMandalaLayer()
+      return
+    }
+
+    if (nextLayer === 'pillar') {
+      setActiveLayer('pillar')
+      setActivePillarId((prev) => prev ?? PILLAR_CELLS[0].id)
+      return
+    }
+
+    setActiveLayer('overview')
   }
 
   const handleBackToRoot = () => {
@@ -639,197 +659,307 @@ function App() {
 
               {activeTab === 'mandala' ? (
                 <section className="mandala-layout" aria-label="曼德拉九宫格 OW64">
-                  {activeLayer === 'pillar' && activePillarId && (
-                    <div className="mandala-toolbar">
-                      <button type="button" className="ghost-button" onClick={handleBackToRoot}>
-                        返回 OW9 主盘
+                  <div className="mandala-toolbar">
+                    <div className="mandala-layer-switch" role="tablist" aria-label="OW64 views">
+                      <button
+                        type="button"
+                        role="tab"
+                        className={`layer-switch-item ${activeLayer === 'root' ? 'is-active' : ''}`}
+                        aria-selected={activeLayer === 'root'}
+                        onClick={() => handleMandalaLayerChange('root')}
+                      >
+                        OW9 主盘
                       </button>
-                      <p className="mandala-path">
-                        OW64 / {PILLAR_META[activePillarId].marker} {currentBoard.pillars[activePillarId].title}
-                      </p>
+                      <button
+                        type="button"
+                        role="tab"
+                        className={`layer-switch-item ${activeLayer === 'pillar' ? 'is-active' : ''}`}
+                        aria-selected={activeLayer === 'pillar'}
+                        onClick={() => handleMandalaLayerChange('pillar')}
+                      >
+                        下钻视图
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        className={`layer-switch-item ${activeLayer === 'overview' ? 'is-active' : ''}`}
+                        aria-selected={activeLayer === 'overview'}
+                        onClick={() => handleMandalaLayerChange('overview')}
+                      >
+                        OW64 全景
+                      </button>
                     </div>
-                  )}
 
-                  <div className="mandala-grid">
-                    {activeLayer === 'root' &&
-                      ROOT_CELLS.map((cell) => {
-                        const target: EditingTarget =
-                          cell.id === 'objective'
-                            ? { scope: 'core' }
-                            : { scope: 'pillar', pillarId: cell.id as PillarId }
-                        const content = getContentByTarget(currentBoard, target)
-                        const editing = isSameTarget(editingTarget, target)
+                    {activeLayer === 'pillar' ? (
+                      <div className="mandala-toolbar-meta">
+                        <button type="button" className="ghost-button" onClick={handleBackToRoot}>
+                          返回 OW9 主盘
+                        </button>
+                        <p className="mandala-path">
+                          OW64 / {PILLAR_META[activeDrillPillarId].marker} {currentBoard.pillars[activeDrillPillarId].title}
+                        </p>
+                      </div>
+                    ) : activeLayer === 'overview' ? (
+                      <p className="mandala-path">全景展示 8 个方向与各自 8 个行动点</p>
+                    ) : (
+                      <p className="mandala-path">点击 W1~W8 可进入对应行动九宫格</p>
+                    )}
+                  </div>
 
-                        if (editing) {
+                  {activeLayer === 'overview' ? (
+                    <div className="ow64-overview-scroll">
+                      <div className="ow64-overview-grid">
+                        {OVERVIEW_GRID_LAYOUT.map((layoutCellId) => {
+                          if (layoutCellId === 'objective') {
+                            return (
+                              <article key={layoutCellId} className="ow64-overview-panel is-center">
+                                <div className="ow64-overview-head">
+                                  <p className="ow64-overview-title">主盘</p>
+                                  <button
+                                    type="button"
+                                    className="ghost-button"
+                                    onClick={() => handleMandalaLayerChange('root')}
+                                  >
+                                    打开
+                                  </button>
+                                </div>
+                                <div className="ow64-mini-grid">
+                                  {ROOT_CELLS.map((cell) => {
+                                    const target: EditingTarget =
+                                      cell.id === 'objective'
+                                        ? { scope: 'core' }
+                                        : { scope: 'pillar', pillarId: cell.id as PillarId }
+                                    const content = getContentByTarget(currentBoard, target)
+                                    return (
+                                      <div key={`root-${cell.id}`} className={`ow64-mini-cell ${cell.id === 'objective' ? 'is-core' : ''}`}>
+                                        <span className="ow64-mini-marker">{cell.marker}</span>
+                                        <p className="ow64-mini-text">{content.title}</p>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </article>
+                            )
+                          }
+
+                          const pillarId = layoutCellId as PillarId
                           return (
-                            <div
-                              key={cell.id}
-                              className={`mandala-cell mandala-editor ${cell.role === 'core' ? 'is-core' : ''}`}
-                            >
-                              <span className="mandala-marker">{cell.marker}</span>
-                              <label className="mandala-field" htmlFor={`title-${cell.id}`}>
-                                <span>目标</span>
-                                <input
-                                  id={`title-${cell.id}`}
-                                  value={draftTitle}
-                                  onChange={(event) => setDraftTitle(event.target.value)}
-                                  className="mandala-input"
-                                  placeholder="输入目标"
-                                />
-                              </label>
-                              <label className="mandala-field" htmlFor={`subtitle-${cell.id}`}>
-                                <span>说明</span>
-                                <input
-                                  id={`subtitle-${cell.id}`}
-                                  value={draftSubtitle}
-                                  onChange={(event) => setDraftSubtitle(event.target.value)}
-                                  className="mandala-input"
-                                  placeholder="输入说明"
-                                />
-                              </label>
-                              <div className="mandala-actions">
-                                <button
-                                  type="button"
-                                  className="mandala-action"
-                                  onClick={handleSaveEdit}
-                                  disabled={!draftTitle.trim()}
-                                >
-                                  保存
-                                </button>
-                                <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
-                                  取消
-                                </button>
-                                <button
-                                  type="button"
-                                  className="mandala-action is-muted"
-                                  onClick={() => handleResetTarget(target)}
-                                >
-                                  恢复默认
+                            <article key={pillarId} className="ow64-overview-panel">
+                              <div className="ow64-overview-head">
+                                <p className="ow64-overview-title">{PILLAR_META[pillarId].marker} 行动盘</p>
+                                <button type="button" className="ghost-button" onClick={() => handleOpenPillar(pillarId)}>
+                                  打开
                                 </button>
                               </div>
-                            </div>
-                          )
-                        }
+                              <div className="ow64-mini-grid">
+                                {PILLAR_GRID_LAYOUT.map((gridItem) => {
+                                  const target: EditingTarget =
+                                    gridItem.type === 'center'
+                                      ? { scope: 'pillar', pillarId }
+                                      : { scope: 'action', pillarId, actionId: gridItem.actionId }
+                                  const marker =
+                                    gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
+                                  const content = getContentByTarget(currentBoard, target)
 
-                        if (cell.role === 'pillar') {
+                                  return (
+                                    <div
+                                      key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
+                                      className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
+                                    >
+                                      <span className="ow64-mini-marker">{marker}</span>
+                                      <p className="ow64-mini-text">{content.title}</p>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mandala-grid">
+                      {activeLayer === 'root' &&
+                        ROOT_CELLS.map((cell) => {
+                          const target: EditingTarget =
+                            cell.id === 'objective'
+                              ? { scope: 'core' }
+                              : { scope: 'pillar', pillarId: cell.id as PillarId }
+                          const content = getContentByTarget(currentBoard, target)
+                          const editing = isSameTarget(editingTarget, target)
+
+                          if (editing) {
+                            return (
+                              <div
+                                key={cell.id}
+                                className={`mandala-cell mandala-editor ${cell.role === 'core' ? 'is-core' : ''}`}
+                              >
+                                <span className="mandala-marker">{cell.marker}</span>
+                                <label className="mandala-field" htmlFor={`title-${cell.id}`}>
+                                  <span>目标</span>
+                                  <input
+                                    id={`title-${cell.id}`}
+                                    value={draftTitle}
+                                    onChange={(event) => setDraftTitle(event.target.value)}
+                                    className="mandala-input"
+                                    placeholder="输入目标"
+                                  />
+                                </label>
+                                <label className="mandala-field" htmlFor={`subtitle-${cell.id}`}>
+                                  <span>说明</span>
+                                  <input
+                                    id={`subtitle-${cell.id}`}
+                                    value={draftSubtitle}
+                                    onChange={(event) => setDraftSubtitle(event.target.value)}
+                                    className="mandala-input"
+                                    placeholder="输入说明"
+                                  />
+                                </label>
+                                <div className="mandala-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-action"
+                                    onClick={handleSaveEdit}
+                                    disabled={!draftTitle.trim()}
+                                  >
+                                    保存
+                                  </button>
+                                  <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
+                                    取消
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-action is-muted"
+                                    onClick={() => handleResetTarget(target)}
+                                  >
+                                    恢复默认
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          if (cell.role === 'pillar') {
+                            return (
+                              <button
+                                key={cell.id}
+                                type="button"
+                                className="mandala-cell"
+                                aria-label={`${cell.marker} ${content.title}，点击展开 8 个行动点`}
+                                onClick={() => handleOpenPillar(cell.id as PillarId)}
+                              >
+                                <span className="mandala-marker">{cell.marker}</span>
+                                <h2 className="mandala-title">{content.title}</h2>
+                                <p className="mandala-subtitle">{content.subtitle}</p>
+                                <p className="mandala-hint">点击进入 {cell.marker} 的 8 个行动点</p>
+                              </button>
+                            )
+                          }
+
                           return (
                             <button
                               key={cell.id}
                               type="button"
-                              className="mandala-cell"
-                              aria-label={`${cell.marker} ${content.title}，点击展开 8 个行动点`}
-                              onClick={() => handleOpenPillar(cell.id as PillarId)}
+                              className="mandala-cell is-core"
+                              aria-label={`${cell.marker} ${content.title}`}
+                              onClick={() => handleStartEdit(target)}
                             >
                               <span className="mandala-marker">{cell.marker}</span>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
-                              <p className="mandala-hint">点击进入 {cell.marker} 的 8 个行动点</p>
+                              <p className="mandala-hint">点击编辑核心目标</p>
                             </button>
                           )
-                        }
+                        })}
 
-                        return (
-                          <button
-                            key={cell.id}
-                            type="button"
-                            className="mandala-cell is-core"
-                            aria-label={`${cell.marker} ${content.title}`}
-                            onClick={() => handleStartEdit(target)}
-                          >
-                            <span className="mandala-marker">{cell.marker}</span>
-                            <h2 className="mandala-title">{content.title}</h2>
-                            <p className="mandala-subtitle">{content.subtitle}</p>
-                            <p className="mandala-hint">点击编辑核心目标</p>
-                          </button>
-                        )
-                      })}
+                      {activeLayer === 'pillar' &&
+                        PILLAR_GRID_LAYOUT.map((gridItem) => {
+                          const target: EditingTarget =
+                            gridItem.type === 'center'
+                              ? { scope: 'pillar', pillarId: activeDrillPillarId }
+                              : { scope: 'action', pillarId: activeDrillPillarId, actionId: gridItem.actionId }
 
-                    {activeLayer === 'pillar' &&
-                      activePillarId &&
-                      PILLAR_GRID_LAYOUT.map((gridItem) => {
-                        const target: EditingTarget =
-                          gridItem.type === 'center'
-                            ? { scope: 'pillar', pillarId: activePillarId }
-                            : { scope: 'action', pillarId: activePillarId, actionId: gridItem.actionId }
+                          const marker =
+                            gridItem.type === 'center'
+                              ? PILLAR_META[activeDrillPillarId].marker
+                              : ACTION_META[gridItem.actionId].marker
 
-                        const marker =
-                          gridItem.type === 'center'
-                            ? PILLAR_META[activePillarId].marker
-                            : ACTION_META[gridItem.actionId].marker
+                          const content = getContentByTarget(currentBoard, target)
+                          const editing = isSameTarget(editingTarget, target)
 
-                        const content = getContentByTarget(currentBoard, target)
-                        const editing = isSameTarget(editingTarget, target)
+                          if (editing) {
+                            const inputIdSuffix =
+                              gridItem.type === 'center'
+                                ? `${activeDrillPillarId}-center`
+                                : `${activeDrillPillarId}-${gridItem.actionId}`
 
-                        if (editing) {
-                          const inputIdSuffix =
-                            gridItem.type === 'center' ? `${activePillarId}-center` : `${activePillarId}-${gridItem.actionId}`
+                            return (
+                              <div
+                                key={inputIdSuffix}
+                                className={`mandala-cell mandala-editor ${gridItem.type === 'center' ? 'is-core' : ''}`}
+                              >
+                                <span className="mandala-marker">{marker}</span>
+                                <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
+                                  <span>目标</span>
+                                  <input
+                                    id={`title-${inputIdSuffix}`}
+                                    value={draftTitle}
+                                    onChange={(event) => setDraftTitle(event.target.value)}
+                                    className="mandala-input"
+                                    placeholder="输入目标"
+                                  />
+                                </label>
+                                <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
+                                  <span>说明</span>
+                                  <input
+                                    id={`subtitle-${inputIdSuffix}`}
+                                    value={draftSubtitle}
+                                    onChange={(event) => setDraftSubtitle(event.target.value)}
+                                    className="mandala-input"
+                                    placeholder="输入说明"
+                                  />
+                                </label>
+                                <div className="mandala-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-action"
+                                    onClick={handleSaveEdit}
+                                    disabled={!draftTitle.trim()}
+                                  >
+                                    保存
+                                  </button>
+                                  <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
+                                    取消
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-action is-muted"
+                                    onClick={() => handleResetTarget(target)}
+                                  >
+                                    恢复默认
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          }
 
                           return (
-                            <div
-                              key={inputIdSuffix}
-                              className={`mandala-cell mandala-editor ${gridItem.type === 'center' ? 'is-core' : ''}`}
+                            <button
+                              key={gridItem.type === 'center' ? `${activeDrillPillarId}-center` : `${activeDrillPillarId}-${gridItem.actionId}`}
+                              type="button"
+                              className={`mandala-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
+                              onClick={() => handleStartEdit(target)}
+                              aria-label={`${marker} ${content.title}`}
                             >
                               <span className="mandala-marker">{marker}</span>
-                              <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
-                                <span>目标</span>
-                                <input
-                                  id={`title-${inputIdSuffix}`}
-                                  value={draftTitle}
-                                  onChange={(event) => setDraftTitle(event.target.value)}
-                                  className="mandala-input"
-                                  placeholder="输入目标"
-                                />
-                              </label>
-                              <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
-                                <span>说明</span>
-                                <input
-                                  id={`subtitle-${inputIdSuffix}`}
-                                  value={draftSubtitle}
-                                  onChange={(event) => setDraftSubtitle(event.target.value)}
-                                  className="mandala-input"
-                                  placeholder="输入说明"
-                                />
-                              </label>
-                              <div className="mandala-actions">
-                                <button
-                                  type="button"
-                                  className="mandala-action"
-                                  onClick={handleSaveEdit}
-                                  disabled={!draftTitle.trim()}
-                                >
-                                  保存
-                                </button>
-                                <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
-                                  取消
-                                </button>
-                                <button
-                                  type="button"
-                                  className="mandala-action is-muted"
-                                  onClick={() => handleResetTarget(target)}
-                                >
-                                  恢复默认
-                                </button>
-                              </div>
-                            </div>
+                              <h2 className="mandala-title">{content.title}</h2>
+                              <p className="mandala-subtitle">{content.subtitle}</p>
+                              <p className="mandala-hint">点击编辑</p>
+                            </button>
                           )
-                        }
-
-                        return (
-                          <button
-                            key={gridItem.type === 'center' ? `${activePillarId}-center` : `${activePillarId}-${gridItem.actionId}`}
-                            type="button"
-                            className={`mandala-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
-                            onClick={() => handleStartEdit(target)}
-                            aria-label={`${marker} ${content.title}`}
-                          >
-                            <span className="mandala-marker">{marker}</span>
-                            <h2 className="mandala-title">{content.title}</h2>
-                            <p className="mandala-subtitle">{content.subtitle}</p>
-                            <p className="mandala-hint">点击编辑</p>
-                          </button>
-                        )
-                      })}
-                  </div>
+                        })}
+                    </div>
+                  )}
                 </section>
               ) : (
                 <section className={`content-panel detail-panel ${activeTab}-panel`}>
