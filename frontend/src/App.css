@@ -587,6 +587,12 @@
   background: linear-gradient(135deg, rgba(27, 67, 50, 0.15), rgba(8, 28, 21, 0.06));
 }
 
+.mandala-cell.is-add {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 92%, transparent), color-mix(in srgb, #f3f0e8 92%, transparent));
+}
+
 .mandala-marker {
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -635,6 +641,13 @@
   border-color: var(--border-strong);
   color: var(--text-primary);
   background: #fffdf8;
+}
+
+.mandala-cell-action.is-danger:hover,
+.mandala-cell-action.is-danger:focus-visible {
+  border-color: #b42318;
+  color: #b42318;
+  background: color-mix(in srgb, #fffdf8 92%, #b42318 8%);
 }
 
 .mandala-cell-action.is-icon {

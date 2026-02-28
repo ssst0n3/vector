@@ -155,6 +155,8 @@ type DrillNode = {
   core: CellContent
   actions: Record<ActionId, CellContent>
   children: Partial<Record<ActionId, DrillNode>>
+  visibleCore: boolean
+  visibleActions: Record<ActionId, boolean>
 }
 
 type Ow64Board = {
@@ -256,7 +258,18 @@ const getPathTitleSegments = (board: Ow64Board, path: DrillPath): string[] => {
   return titles
 }
 
-const createDrillNode = (seed: CellContent, seedMarker: string): DrillNode => {
+const createActionVisibilityMap = (visible: boolean): Record<ActionId, boolean> => {
+  return ACTION_LAYOUT.reduce((acc, action) => {
+    acc[action.id] = visible
+    return acc
+  }, {} as Record<ActionId, boolean>)
+}
+
+const createDrillNode = (
+  seed: CellContent,
+  seedMarker: string,
+  visibility: { core?: boolean; actions?: boolean } = {},
+): DrillNode => {
   const actions = ACTION_LAYOUT.reduce((acc, action) => {
     acc[action.id] = {
       title: `${seedMarker} ${action.marker}`,
@@ -272,6 +285,8 @@ const createDrillNode = (seed: CellContent, seedMarker: string): DrillNode => {
     },
     actions,
     children: {},
+    visibleCore: visibility.core ?? false,
+    visibleActions: createActionVisibilityMap(visibility.actions ?? false),
   }
 }
 
@@ -296,6 +311,7 @@ const createDefaultOw64Board = (): Ow64Board => {
         subtitle: cell.subtitle,
       },
       cell.marker,
+      { core: true, actions: true },
     )
     return pillarAcc
   }, {} as Record<PillarId, DrillNode>)
@@ -338,16 +354,27 @@ const mergeBoardWithDefault = (incoming: unknown): Ow64Board => {
       core: base.core,
       actions: { ...base.actions },
       children: { ...base.children },
+      visibleCore: base.visibleCore,
+      visibleActions: { ...base.visibleActions },
     }
 
     if (isCellContent(parsedNode.core)) {
       nextNode.core = parsedNode.core
     }
 
+    if (typeof parsedNode.visibleCore === 'boolean') {
+      nextNode.visibleCore = parsedNode.visibleCore
+    }
+
     for (const action of ACTION_LAYOUT) {
       const incomingAction = parsedNode.actions?.[action.id]
       if (isCellContent(incomingAction)) {
         nextNode.actions[action.id] = incomingAction
+      }
+
+      const incomingActionVisible = parsedNode.visibleActions?.[action.id]
+      if (typeof incomingActionVisible === 'boolean') {
+        nextNode.visibleActions[action.id] = incomingActionVisible
       }
 
       const incomingChild = parsedNode.children?.[action.id]
@@ -692,6 +719,21 @@ const getNodeByPath = (board: Ow64Board, path: DrillPath): DrillNode => {
   return currentNode
 }
 
+const getNodeByPathExact = (board: Ow64Board, path: DrillPath): DrillNode | null => {
+  const [pillarId, ...actionPath] = path
+  let currentNode = board.drills[pillarId]
+
+  for (const actionId of actionPath) {
+    const nextNode = currentNode.children[actionId]
+    if (!nextNode) {
+      return null
+    }
+    currentNode = nextNode
+  }
+
+  return currentNode
+}
+
 const upsertNodeByPath = (node: DrillNode, actionPath: ActionId[], depth: number): DrillNode => {
   if (depth >= actionPath.length) {
     return node
@@ -749,10 +791,21 @@ const getContentByTarget = (board: Ow64Board, target: EditingTarget): CellConten
   }
 
   if (target.scope === 'drillAction') {
-    return getNodeByPath(board, target.path).actions[target.actionId]
+    const node = getNodeByPathExact(board, target.path)
+    if (!node) {
+      const defaults = createDefaultOw64Board()
+      return getNodeByPath(defaults, target.path).actions[target.actionId]
+    }
+    return node.actions[target.actionId]
   }
 
-  return getNodeByPath(board, target.path).core
+  const node = getNodeByPathExact(board, target.path)
+  if (!node) {
+    const defaults = createDefaultOw64Board()
+    return getNodeByPath(defaults, target.path).core
+  }
+
+  return node.core
 }
 
 const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: CellContent): Ow64Board => {
@@ -777,6 +830,7 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
         [pillarId]: {
           ...board.drills[pillarId],
           core: content,
+          visibleCore: true,
         },
       },
     }
@@ -811,6 +865,7 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
       return {
         ...node,
         core: content,
+        visibleCore: true,
       }
     }
 
@@ -844,7 +899,11 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
 
 const getDefaultContentByTarget = (target: EditingTarget, board: Ow64Board): CellContent => {
   if (target.scope === 'drillAction') {
-    const currentNode = getNodeByPath(board, target.path)
+    const currentNode = getNodeByPathExact(board, target.path)
+    if (!currentNode) {
+      const defaults = createDefaultOw64Board()
+      return getNodeByPath(defaults, target.path).actions[target.actionId]
+    }
     const seedMarker = target.path.length === 1 ? PILLAR_META[target.path[0]].marker : currentNode.core.title
     return createDrillNode(currentNode.core, seedMarker).actions[target.actionId]
   }
@@ -1050,6 +1109,10 @@ const setActionContentByPath = (board: Ow64Board, path: DrillPath, actionId: Act
           ...node.actions,
           [actionId]: content,
         },
+        visibleActions: {
+          ...node.visibleActions,
+          [actionId]: true,
+        },
       }
     }
 
@@ -1076,6 +1139,75 @@ const setActionContentByPath = (board: Ow64Board, path: DrillPath, actionId: Act
     drills: {
       ...board.drills,
       [pillarId]: nextPillarRootNode,
+    },
+  }
+}
+
+const setDrillTargetVisibility = (
+  board: Ow64Board,
+  target: Extract<EditingTarget, { scope: 'drillCore' | 'drillAction' }>,
+  visible: boolean,
+): Ow64Board => {
+  const [pillarId, ...actionPath] = target.path
+
+  const updateNode = (node: DrillNode, depth: number): DrillNode => {
+    if (depth === actionPath.length) {
+      if (target.scope === 'drillCore') {
+        if (node.visibleCore === visible) {
+          return node
+        }
+
+        return {
+          ...node,
+          visibleCore: visible,
+        }
+      }
+
+      if (node.visibleActions[target.actionId] === visible) {
+        return node
+      }
+
+      return {
+        ...node,
+        visibleActions: {
+          ...node.visibleActions,
+          [target.actionId]: visible,
+        },
+      }
+    }
+
+    const actionId = actionPath[depth]
+    const childNode = node.children[actionId]
+    if (!childNode) {
+      return node
+    }
+
+    const nextChildNode = updateNode(childNode, depth + 1)
+    if (nextChildNode === childNode) {
+      return node
+    }
+
+    return {
+      ...node,
+      children: {
+        ...node.children,
+        [actionId]: nextChildNode,
+      },
+    }
+  }
+
+  const currentRootNode = board.drills[pillarId]
+  const nextRootNode = updateNode(currentRootNode, 0)
+
+  if (nextRootNode === currentRootNode) {
+    return board
+  }
+
+  return {
+    ...board,
+    drills: {
+      ...board.drills,
+      [pillarId]: nextRootNode,
     },
   }
 }
@@ -1215,7 +1347,7 @@ function App() {
   const activeTabInfo = PROJECT_TABS.find((tab) => tab.id === activeTab)
   const activeDrillPath = drillPath ?? ([PILLAR_CELLS[0].id] as DrillPath)
   const activeDrillPillarId = activeDrillPath[0]
-  const activeDrillNode = getNodeByPath(currentBoard, activeDrillPath)
+  const activeDrillNodeExact = getNodeByPathExact(currentBoard, activeDrillPath)
   const activeDrillTitleSegments = getPathTitleSegments(currentBoard, activeDrillPath)
 
   const resetEditingDraft = () => {
@@ -1392,6 +1524,12 @@ function App() {
     setDraftSubtitle(content.subtitle)
   }
 
+  const handleStartAdd = (target: Extract<EditingTarget, { scope: 'drillCore' | 'drillAction' }>) => {
+    setEditingTarget(target)
+    setDraftTitle('')
+    setDraftSubtitle('')
+  }
+
   const handleCancelEdit = () => {
     resetEditingDraft()
   }
@@ -1435,6 +1573,63 @@ function App() {
       return
     }
 
+    if (target.scope === 'drillAction') {
+      setBoardByProject((prev) => {
+        const sourceBoard = prev[selectedProjectId]
+        if (!sourceBoard) {
+          return prev
+        }
+
+        const updatedBoard = setDrillTargetVisibility(sourceBoard, target, false)
+        if (updatedBoard === sourceBoard) {
+          return prev
+        }
+
+        const next = {
+          ...prev,
+          [selectedProjectId]: updatedBoard,
+        }
+
+        persistOw64Board(selectedProjectId, updatedBoard)
+        return next
+      })
+
+      if (isSameTarget(editingTarget, target)) {
+        handleCancelEdit()
+      }
+      return
+    }
+
+    if (target.scope === 'drillCore') {
+      const defaultContent = getDefaultContentByTarget(target, currentBoard)
+
+      setBoardByProject((prev) => {
+        const sourceBoard = prev[selectedProjectId]
+        if (!sourceBoard) {
+          return prev
+        }
+
+        const contentResetBoard = setContentByTarget(sourceBoard, target, defaultContent)
+        const updatedBoard = setDrillTargetVisibility(contentResetBoard, target, true)
+        if (updatedBoard === sourceBoard) {
+          return prev
+        }
+
+        const next = {
+          ...prev,
+          [selectedProjectId]: updatedBoard,
+        }
+
+        persistOw64Board(selectedProjectId, updatedBoard)
+        return next
+      })
+
+      if (isSameTarget(editingTarget, target)) {
+        handleCancelEdit()
+      }
+      return
+    }
+
     const defaultContent = getDefaultContentByTarget(target, currentBoard)
 
     setBoardByProject((prev) => {
@@ -1465,32 +1660,31 @@ function App() {
   }
 
   const handleDrillDeeper = (actionId: ActionId) => {
-    if (!selectedProjectId) {
-      return
-    }
-
     resetEditingDraft()
     const nextPath = [...activeDrillPath, actionId] as DrillPath
 
-    setBoardByProject((prev) => {
-      const sourceBoard = prev[selectedProjectId]
-      if (!sourceBoard) {
-        return prev
-      }
+    if (selectedProjectId) {
+      setBoardByProject((prev) => {
+        const sourceBoard = prev[selectedProjectId]
+        if (!sourceBoard) {
+          return prev
+        }
 
-      const ensuredBoard = ensurePathExists(sourceBoard, nextPath)
-      if (ensuredBoard === sourceBoard) {
-        return prev
-      }
+        const ensuredBoard = ensurePathExists(sourceBoard, nextPath)
+        const updatedBoard = setDrillTargetVisibility(ensuredBoard, { scope: 'drillCore', path: nextPath }, true)
+        if (updatedBoard === sourceBoard) {
+          return prev
+        }
 
-      const next = {
-        ...prev,
-        [selectedProjectId]: ensuredBoard,
-      }
+        const next = {
+          ...prev,
+          [selectedProjectId]: updatedBoard,
+        }
 
-      persistOw64Board(selectedProjectId, ensuredBoard)
-      return next
-    })
+        persistOw64Board(selectedProjectId, updatedBoard)
+        return next
+      })
+    }
 
     setActiveLayer('pillar')
     setDrillPath(nextPath)
@@ -2252,8 +2446,8 @@ function App() {
 
                           if (gridItem.type === 'center') {
                             const marker = getMarkerByPath(activeDrillPath)
-                            const content = activeDrillNode.core
                             const editing = isSameTarget(editingTarget, centerTarget)
+                            const centerContent = getContentByTarget(currentBoard, centerTarget)
 
                             const inputIdSuffix =
                               activeDrillPath.length === 1
@@ -2297,30 +2491,32 @@ function App() {
                                     <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
                                       取消
                                     </button>
-                                    <button
-                                      type="button"
-                                      className="mandala-action is-muted"
-                                      onClick={() => handleResetTarget(centerTarget)}
-                                    >
-                                      恢复默认
-                                    </button>
+                                    {activeDrillNodeExact?.visibleCore && (
+                                      <button
+                                        type="button"
+                                        className="mandala-action is-muted"
+                                        onClick={() => handleResetTarget(centerTarget)}
+                                      >
+                                        恢复默认
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               )
                             }
 
                             return (
-                              <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${content.title}`}>
+                              <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${centerContent.title}`}>
                                 <span className="mandala-marker">{marker}</span>
-                                <h2 className="mandala-title">{content.title}</h2>
-                                <p className="mandala-subtitle">{content.subtitle}</p>
+                                <h2 className="mandala-title">{centerContent.title}</h2>
+                                <p className="mandala-subtitle">{centerContent.subtitle}</p>
                                 <div className="mandala-cell-actions">
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-icon"
                                     onClick={() => handleStartEdit(centerTarget)}
                                     title="编辑"
-                                    aria-label={`编辑 ${marker} ${content.title}`}
+                                    aria-label={`编辑 ${marker} ${centerContent.title}`}
                                   >
                                     <svg
                                       aria-hidden="true"
@@ -2344,13 +2540,13 @@ function App() {
                           }
 
                           const marker = ACTION_META[gridItem.actionId].marker
-                          const content = activeDrillNode.actions[gridItem.actionId]
                           const actionTarget: EditingTarget = {
                             scope: 'drillAction',
                             path: activeDrillPath,
                             actionId: gridItem.actionId,
                           }
                           const editing = isSameTarget(editingTarget, actionTarget)
+                          const actionVisible = Boolean(activeDrillNodeExact?.visibleActions[gridItem.actionId])
 
                           if (editing) {
                             const inputIdSuffix = `${activeDrillPath.join('-')}-${gridItem.actionId}`
@@ -2386,34 +2582,66 @@ function App() {
                                   <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
                                     取消
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="mandala-action is-muted"
-                                    onClick={() => handleResetTarget(actionTarget)}
-                                  >
-                                    恢复默认
-                                  </button>
+                                  {actionVisible && (
+                                    <button
+                                      type="button"
+                                      className="mandala-action is-muted"
+                                      onClick={() => handleResetTarget(actionTarget)}
+                                    >
+                                      恢复默认
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             )
+                          }
+
+                          if (!actionVisible) {
+                            return (
+                              <article
+                                key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
+                                className="mandala-cell is-add"
+                                aria-label={`${marker} 添加卡片`}
+                              >
+                                <span className="mandala-marker">{marker}</span>
+                                <h2 className="mandala-title">添加卡片</h2>
+                                <p className="mandala-subtitle">点击添加行动卡片</p>
+                                <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={() => handleStartAdd(actionTarget)}
+                                    title="添加"
+                                    aria-label={`添加 ${marker} 卡片`}
+                                  >
+                                    <span aria-hidden="true">＋</span>
+                                  </button>
+                                </div>
+                              </article>
+                            )
+                          }
+
+                          const actionContent = activeDrillNodeExact?.actions[gridItem.actionId]
+                          if (!actionContent) {
+                            return null
                           }
 
                           return (
                             <article
                               key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
                               className="mandala-cell"
-                              aria-label={`${marker} ${content.title}`}
+                              aria-label={`${marker} ${actionContent.title}`}
                             >
                               <span className="mandala-marker">{marker}</span>
-                              <h2 className="mandala-title">{content.title}</h2>
-                              <p className="mandala-subtitle">{content.subtitle}</p>
+                              <h2 className="mandala-title">{actionContent.title}</h2>
+                              <p className="mandala-subtitle">{actionContent.subtitle}</p>
                               <div className="mandala-cell-actions">
                                 <button
                                   type="button"
                                   className="mandala-cell-action is-icon"
                                   onClick={() => handleStartEdit(actionTarget)}
                                   title="编辑"
-                                  aria-label={`编辑 ${marker} ${content.title}`}
+                                  aria-label={`编辑 ${marker} ${actionContent.title}`}
                                 >
                                   <svg
                                     aria-hidden="true"
@@ -2436,9 +2664,25 @@ function App() {
                                   className="mandala-cell-action is-primary is-icon"
                                   onClick={() => handleDrillDeeper(gridItem.actionId)}
                                   title="继续下钻"
-                                  aria-label={`继续下钻 ${marker} ${content.title}`}
+                                  aria-label={`继续下钻 ${marker} ${actionContent.title}`}
                                 >
                                   <span aria-hidden="true">⤢</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="mandala-cell-action is-danger is-icon"
+                                  onClick={() => handleResetTarget(actionTarget)}
+                                  title="删除"
+                                  aria-label={`删除 ${marker} ${actionContent.title}`}
+                                >
+                                  <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                    <path d="M5 7H19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M9 7V5H15V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M8 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M12 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M16 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M7 7L8 20H16L17 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
                                 </button>
                               </div>
                             </article>
