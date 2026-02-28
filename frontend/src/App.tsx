@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import './App.css'
 
-const PROJECTS = [
+const DEFAULT_PROJECTS = [
   {
     id: 'atlas',
     name: 'Atlas Initiative',
@@ -21,6 +21,8 @@ const PROJECTS = [
     status: 'In review',
   },
 ] as const
+
+const PROJECT_STATUS_OPTIONS = ['Active', 'Planning', 'In review', 'Paused', 'Done'] as const
 
 const PROJECT_TABS = [
   {
@@ -128,8 +130,13 @@ const OVERVIEW_GRID_LAYOUT = ['w1', 'w2', 'w3', 'w4', 'objective', 'w5', 'w6', '
 
 type ViewMode = 'home' | 'projects' | 'projectDetail'
 type MandalaLayer = 'root' | 'pillar' | 'overview'
-type ProjectId = (typeof PROJECTS)[number]['id']
+type ProjectId = (typeof DEFAULT_PROJECTS)[number]['id']
 type ProjectTabId = (typeof PROJECT_TABS)[number]['id']
+type ProjectMeta = {
+  name: string
+  summary: string
+  status: string
+}
 type RootCell = (typeof ROOT_CELLS)[number]
 type RootCellId = RootCell['id']
 type PillarId = Exclude<RootCellId, 'objective'>
@@ -161,6 +168,19 @@ type EditingTarget =
 
 const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
+const PROJECT_META_STORAGE_KEY = 'project:meta:v1'
+
+const DEFAULT_PROJECT_META_BY_ID = DEFAULT_PROJECTS.reduce(
+  (acc, project) => {
+    acc[project.id] = {
+      name: project.name,
+      summary: project.summary,
+      status: project.status,
+    }
+    return acc
+  },
+  {} as Record<ProjectId, ProjectMeta>,
+)
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
 
@@ -437,6 +457,60 @@ const persistOw64Board = (projectId: ProjectId, board: Ow64Board) => {
   window.localStorage.setItem(`${NEW_STORAGE_KEY_PREFIX}${projectId}`, JSON.stringify(board))
 }
 
+const loadProjectMetaById = (): Record<ProjectId, ProjectMeta> => {
+  const defaults = DEFAULT_PROJECTS.reduce(
+    (acc, project) => {
+      acc[project.id] = {
+        ...DEFAULT_PROJECT_META_BY_ID[project.id],
+      }
+      return acc
+    },
+    {} as Record<ProjectId, ProjectMeta>,
+  )
+
+  if (typeof window === 'undefined') {
+    return defaults
+  }
+
+  const raw = window.localStorage.getItem(PROJECT_META_STORAGE_KEY)
+  if (!raw) {
+    return defaults
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<ProjectId, Partial<ProjectMeta>>>
+
+    for (const project of DEFAULT_PROJECTS) {
+      const incoming = parsed[project.id]
+      if (!incoming) {
+        continue
+      }
+
+      const name = typeof incoming.name === 'string' ? incoming.name : null
+      const summary = typeof incoming.summary === 'string' ? incoming.summary : null
+      const status = typeof incoming.status === 'string' ? incoming.status : null
+
+      defaults[project.id] = {
+        name: name ?? defaults[project.id].name,
+        summary: summary ?? defaults[project.id].summary,
+        status: status ?? defaults[project.id].status,
+      }
+    }
+
+    return defaults
+  } catch {
+    return defaults
+  }
+}
+
+const persistProjectMetaById = (metaById: Record<ProjectId, ProjectMeta>) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(PROJECT_META_STORAGE_KEY, JSON.stringify(metaById))
+}
+
 const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
   if (!left) {
     return false
@@ -619,7 +693,7 @@ const getDefaultContentByTarget = (target: EditingTarget, board: Ow64Board): Cel
   if (target.scope === 'drillCore' && target.path.length > 1) {
     const parentPath = [target.path[0], ...target.path.slice(1, -1)] as DrillPath
     const parentNode = getNodeByPath(board, parentPath)
-    const seedActionId = target.path[target.path.length - 1]
+    const seedActionId = target.path[target.path.length - 1] as ActionId
     return parentNode.actions[seedActionId]
   }
 
@@ -633,22 +707,37 @@ function App() {
   const [activeTab, setActiveTab] = useState<ProjectTabId>('mandala')
   const [activeLayer, setActiveLayer] = useState<MandalaLayer>('root')
   const [drillPath, setDrillPath] = useState<DrillPath | null>(null)
+  const [projectMetaById, setProjectMetaById] = useState<Record<ProjectId, ProjectMeta>>(() => loadProjectMetaById())
   const [boardByProject, setBoardByProject] = useState<Record<ProjectId, Ow64Board>>(() => {
-    return PROJECTS.reduce((acc, project) => {
+    return DEFAULT_PROJECTS.reduce((acc, project) => {
       acc[project.id] = loadOw64Board(project.id)
       return acc
     }, {} as Record<ProjectId, Ow64Board>)
   })
+  const [projectEditingId, setProjectEditingId] = useState<ProjectId | null>(null)
+  const [projectDraftName, setProjectDraftName] = useState('')
+  const [projectDraftSummary, setProjectDraftSummary] = useState('')
+  const [projectDraftStatus, setProjectDraftStatus] = useState<string>(PROJECT_STATUS_OPTIONS[0])
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
 
+  const projects = useMemo(
+    () =>
+      DEFAULT_PROJECTS.map((project) => ({
+        id: project.id,
+        ...projectMetaById[project.id],
+      })),
+    [projectMetaById],
+  )
+
   const selectedProject = useMemo(
-    () => PROJECTS.find((project) => project.id === selectedProjectId),
-    [selectedProjectId],
+    () => projects.find((project) => project.id === selectedProjectId),
+    [projects, selectedProjectId],
   )
 
   const currentBoard = boardByProject[selectedProjectId]
+  const isProjectEditing = projectEditingId !== null
   const activeTabInfo = PROJECT_TABS.find((tab) => tab.id === activeTab)
   const activeDrillPath = drillPath ?? ([PILLAR_CELLS[0].id] as DrillPath)
   const activeDrillPillarId = activeDrillPath[0]
@@ -666,14 +755,23 @@ function App() {
     setDrillPath(null)
   }
 
+  const resetProjectDraft = () => {
+    setProjectEditingId(null)
+    setProjectDraftName('')
+    setProjectDraftSummary('')
+    setProjectDraftStatus(PROJECT_STATUS_OPTIONS[0])
+  }
+
   const handleViewChange = (nextView: ViewMode) => {
     resetEditingDraft()
     resetMandalaLayer()
+    resetProjectDraft()
     setView(nextView)
   }
 
   const handleTabChange = (tabId: ProjectTabId) => {
     resetEditingDraft()
+    resetProjectDraft()
     if (tabId !== 'mandala') {
       resetMandalaLayer()
     }
@@ -683,6 +781,7 @@ function App() {
   const handleProjectEnter = (projectId: ProjectId) => {
     resetEditingDraft()
     resetMandalaLayer()
+    resetProjectDraft()
     setSelectedProjectId(projectId)
     setView('projectDetail')
     setActiveTab('mandala')
@@ -691,7 +790,74 @@ function App() {
   const handleBackToProjects = () => {
     resetEditingDraft()
     resetMandalaLayer()
+    resetProjectDraft()
     setView('projects')
+  }
+
+  const handleProjectEditStart = (projectId: ProjectId) => {
+    const projectMeta = projectMetaById[projectId]
+    if (!projectMeta) {
+      return
+    }
+
+    setProjectEditingId(projectId)
+    setProjectDraftName(projectMeta.name)
+    setProjectDraftSummary(projectMeta.summary)
+    setProjectDraftStatus(projectMeta.status)
+  }
+
+  const handleProjectEditCancel = () => {
+    resetProjectDraft()
+  }
+
+  const handleProjectEditSave = () => {
+    if (!projectEditingId) {
+      return
+    }
+
+    const trimmedName = projectDraftName.trim()
+    if (!trimmedName) {
+      return
+    }
+
+    const nextMeta: ProjectMeta = {
+      name: trimmedName,
+      summary: projectDraftSummary.trim(),
+      status: projectDraftStatus.trim(),
+    }
+
+    setProjectMetaById((prev) => {
+      const next = {
+        ...prev,
+        [projectEditingId]: nextMeta,
+      }
+      persistProjectMetaById(next)
+      return next
+    })
+
+    handleProjectEditCancel()
+  }
+
+  const handleProjectEditReset = () => {
+    const targetProjectId = projectEditingId ?? selectedProjectId
+    const defaultMeta = DEFAULT_PROJECT_META_BY_ID[targetProjectId]
+
+    setProjectMetaById((prev) => {
+      const next = {
+        ...prev,
+        [targetProjectId]: {
+          ...defaultMeta,
+        },
+      }
+      persistProjectMetaById(next)
+      return next
+    })
+
+    if (isProjectEditing) {
+      setProjectDraftName(defaultMeta.name)
+      setProjectDraftSummary(defaultMeta.summary)
+      setProjectDraftStatus(defaultMeta.status)
+    }
   }
 
   const handleStartEdit = (target: EditingTarget) => {
@@ -885,20 +1051,82 @@ function App() {
                 <p className="content-desc">浏览项目列表，进入详情空间。</p>
               </section>
               <section className="content-panel projects-panel">
-                {PROJECTS.map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    className="panel-card project-card"
-                    onClick={() => handleProjectEnter(project.id)}
-                  >
+                {projects.map((project) => (
+                  <article key={project.id} className="panel-card project-card">
                     <div>
                       <p className="project-status">{project.status}</p>
                       <h2 className="panel-title">{project.name}</h2>
                       <p className="panel-desc">{project.summary}</p>
                     </div>
-                    <span className="project-cta">进入项目</span>
-                  </button>
+
+                    {projectEditingId === project.id ? (
+                      <div className="project-editor project-editor-inline" role="group" aria-label="编辑项目信息">
+                        <label className="project-field" htmlFor={`project-name-${project.id}`}>
+                          <span>项目名称</span>
+                          <input
+                            id={`project-name-${project.id}`}
+                            className="project-input"
+                            value={projectDraftName}
+                            onChange={(event) => setProjectDraftName(event.target.value)}
+                            placeholder="输入项目名称"
+                          />
+                        </label>
+                        <label className="project-field" htmlFor={`project-summary-${project.id}`}>
+                          <span>项目简介</span>
+                          <input
+                            id={`project-summary-${project.id}`}
+                            className="project-input"
+                            value={projectDraftSummary}
+                            onChange={(event) => setProjectDraftSummary(event.target.value)}
+                            placeholder="输入项目简介"
+                          />
+                        </label>
+                        <label className="project-field" htmlFor={`project-status-${project.id}`}>
+                          <span>项目状态</span>
+                          <select
+                            id={`project-status-${project.id}`}
+                            className="project-input"
+                            value={projectDraftStatus}
+                            onChange={(event) => setProjectDraftStatus(event.target.value)}
+                          >
+                            {PROJECT_STATUS_OPTIONS.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                            {!PROJECT_STATUS_OPTIONS.includes(projectDraftStatus as (typeof PROJECT_STATUS_OPTIONS)[number]) && (
+                              <option value={projectDraftStatus}>{projectDraftStatus}</option>
+                            )}
+                          </select>
+                        </label>
+                        <div className="project-actions">
+                          <button
+                            type="button"
+                            className="mandala-action"
+                            onClick={handleProjectEditSave}
+                            disabled={!projectDraftName.trim()}
+                          >
+                            保存
+                          </button>
+                          <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
+                            取消
+                          </button>
+                          <button type="button" className="mandala-action is-muted" onClick={handleProjectEditReset}>
+                            恢复默认
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="project-card-actions">
+                        <button type="button" className="ghost-button" onClick={() => handleProjectEnter(project.id)}>
+                          进入项目
+                        </button>
+                        <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(project.id)}>
+                          编辑信息
+                        </button>
+                      </div>
+                    )}
+                  </article>
                 ))}
               </section>
             </>
@@ -910,11 +1138,76 @@ function App() {
                 <p className="content-eyebrow">Project</p>
                 <div className="detail-title">
                   <h1 className="content-title">{selectedProject?.name}</h1>
-                  <button type="button" className="ghost-button" onClick={handleBackToProjects}>
-                    返回项目管理
-                  </button>
+                  <div className="detail-actions">
+                    <button type="button" className="ghost-button" onClick={handleBackToProjects}>
+                      返回项目管理
+                    </button>
+                    {projectEditingId !== selectedProjectId && (
+                      <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(selectedProjectId)}>
+                        编辑项目信息
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p className="content-desc">{selectedProject?.summary}</p>
+                {projectEditingId === selectedProjectId && (
+                  <div className="project-editor" role="group" aria-label="编辑项目信息">
+                    <label className="project-field" htmlFor="project-name">
+                      <span>项目名称</span>
+                      <input
+                        id="project-name"
+                        className="project-input"
+                        value={projectDraftName}
+                        onChange={(event) => setProjectDraftName(event.target.value)}
+                        placeholder="输入项目名称"
+                      />
+                    </label>
+                    <label className="project-field" htmlFor="project-summary">
+                      <span>项目简介</span>
+                      <input
+                        id="project-summary"
+                        className="project-input"
+                        value={projectDraftSummary}
+                        onChange={(event) => setProjectDraftSummary(event.target.value)}
+                        placeholder="输入项目简介"
+                      />
+                    </label>
+                    <label className="project-field" htmlFor="project-status">
+                      <span>项目状态</span>
+                      <select
+                        id="project-status"
+                        className="project-input"
+                        value={projectDraftStatus}
+                        onChange={(event) => setProjectDraftStatus(event.target.value)}
+                      >
+                        {PROJECT_STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                        {!PROJECT_STATUS_OPTIONS.includes(projectDraftStatus as (typeof PROJECT_STATUS_OPTIONS)[number]) && (
+                          <option value={projectDraftStatus}>{projectDraftStatus}</option>
+                        )}
+                      </select>
+                    </label>
+                    <div className="project-actions">
+                      <button
+                        type="button"
+                        className="mandala-action"
+                        onClick={handleProjectEditSave}
+                        disabled={!projectDraftName.trim()}
+                      >
+                        保存
+                      </button>
+                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
+                        取消
+                      </button>
+                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditReset}>
+                        恢复默认
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
 
               <section className="tab-bar" role="tablist" aria-label="Project tabs">
