@@ -589,16 +589,16 @@
 
 .mandala-cell.is-add {
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--border-strong) 36%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 98%, transparent), color-mix(in srgb, #f7f4ec 97%, transparent));
-  box-shadow: var(--shadow-soft);
+  border-color: color-mix(in srgb, var(--border-strong) 10%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 99.5%, transparent), color-mix(in srgb, #faf8f2 99.5%, transparent));
+  box-shadow: none;
   padding: 0;
 }
 
 .mandala-cell.is-add:hover {
   transform: none;
-  border-color: color-mix(in srgb, var(--border-strong) 48%, transparent);
-  box-shadow: var(--shadow-soft);
+  border-color: color-mix(in srgb, var(--border-strong) 16%, transparent);
+  box-shadow: none;
 }
 
 .mandala-add-button {
@@ -609,21 +609,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: color-mix(in srgb, var(--text-primary) 58%, var(--text-muted));
-  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  color: color-mix(in srgb, var(--text-primary) 18%, var(--text-muted));
+  font-size: clamp(1.2rem, 2.1vw, 1.55rem);
+  font-weight: 300;
+  opacity: 0.42;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.18s ease, transform 0.18s ease;
+  transition: color 0.18s ease, opacity 0.18s ease;
 }
 
 .mandala-add-button:hover,
 .mandala-add-button:focus-visible {
-  color: color-mix(in srgb, var(--text-primary) 72%, var(--text-muted));
-  transform: scale(1.03);
+  color: color-mix(in srgb, var(--text-primary) 28%, var(--text-muted));
+  opacity: 0.58;
 }
 
 .mandala-add-button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--border-strong) 62%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--border-strong) 30%, transparent);
   outline-offset: -4px;
 }
 
