@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import './App.css'
 
 const DEFAULT_PROJECTS = [
@@ -215,6 +216,22 @@ const ACTION_META = ACTION_LAYOUT.reduce(
     return acc
   },
   {} as Record<ActionId, ActionMeta>,
+)
+
+const PILLAR_ID_BY_MARKER = PILLAR_CELLS.reduce(
+  (acc, pillar) => {
+    acc[pillar.marker] = pillar.id
+    return acc
+  },
+  {} as Record<string, PillarId>,
+)
+
+const ACTION_ID_BY_MARKER = ACTION_LAYOUT.reduce(
+  (acc, action) => {
+    acc[action.marker] = action.id
+    return acc
+  },
+  {} as Record<string, ActionId>,
 )
 
 const isSamePath = (left: DrillPath, right: DrillPath) => {
@@ -856,6 +873,200 @@ const buildOw64MarkdownContent = (projectId: ProjectId, projectName: string, boa
   return sections.join('\n')
 }
 
+const unescapeMarkdownCell = (value: string): string => {
+  return value.replace(/<br\s*\/?>/gi, '\n').replace(/\\\|/g, '|')
+}
+
+const parseMarkdownTableRow = (line: string): string[] | null => {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+    return null
+  }
+
+  return trimmed
+    .slice(1, -1)
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim())
+}
+
+const isMarkdownTableSeparator = (cells: string[]): boolean => {
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+const parseRowTypeLabel = (value: string): CsvRow['rowType'] | null => {
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, ' ')
+  if (normalized === 'root core') {
+    return 'root-core'
+  }
+  if (normalized === 'root pillar') {
+    return 'root-pillar'
+  }
+  if (normalized === 'drill core') {
+    return 'drill-core'
+  }
+  if (normalized === 'drill action') {
+    return 'drill-action'
+  }
+  return null
+}
+
+const parseDrillPathFromMarker = (path: string): DrillPath | null => {
+  const segments = path
+    .split('>')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+  if (segments.length === 0) {
+    return null
+  }
+
+  const [pillarMarker, ...actionMarkers] = segments
+  const pillarId = PILLAR_ID_BY_MARKER[pillarMarker]
+  if (!pillarId) {
+    return null
+  }
+
+  const actionIds: ActionId[] = []
+  for (const actionMarker of actionMarkers) {
+    const actionId = ACTION_ID_BY_MARKER[actionMarker]
+    if (!actionId) {
+      return null
+    }
+    actionIds.push(actionId)
+  }
+
+  return [pillarId, ...actionIds] as DrillPath
+}
+
+const setActionContentByPath = (board: Ow64Board, path: DrillPath, actionId: ActionId, content: CellContent): Ow64Board => {
+  const [pillarId, ...actionPath] = path
+  const updateNodeAction = (node: DrillNode, depth: number): DrillNode => {
+    if (depth >= actionPath.length) {
+      return {
+        ...node,
+        actions: {
+          ...node.actions,
+          [actionId]: content,
+        },
+      }
+    }
+
+    const nextActionId = actionPath[depth]
+    const childNode = node.children[nextActionId] ?? createDrillNode(node.actions[nextActionId], `${node.actions[nextActionId].title}`)
+    const nextChildNode = updateNodeAction(childNode, depth + 1)
+
+    if (nextChildNode === childNode) {
+      return node
+    }
+
+    return {
+      ...node,
+      children: {
+        ...node.children,
+        [nextActionId]: nextChildNode,
+      },
+    }
+  }
+
+  const nextPillarRootNode = updateNodeAction(board.drills[pillarId], 0)
+  return {
+    ...board,
+    drills: {
+      ...board.drills,
+      [pillarId]: nextPillarRootNode,
+    },
+  }
+}
+
+const importOw64MarkdownContent = (rawMarkdown: string): Ow64Board => {
+  const lines = rawMarkdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  const rows: CsvRow[] = []
+
+  for (const line of lines) {
+    const cells = parseMarkdownTableRow(line)
+    if (!cells || cells.length !== 5 || isMarkdownTableSeparator(cells)) {
+      continue
+    }
+
+    if (cells[0].toLowerCase() === 'type' && cells[1].toLowerCase() === 'marker') {
+      continue
+    }
+
+    const rowType = parseRowTypeLabel(cells[0])
+    if (!rowType) {
+      continue
+    }
+
+    rows.push({
+      rowType,
+      marker: unescapeMarkdownCell(cells[1]),
+      path: unescapeMarkdownCell(cells[2]),
+      title: unescapeMarkdownCell(cells[3]),
+      subtitle: unescapeMarkdownCell(cells[4]),
+    })
+  }
+
+  if (rows.length === 0) {
+    throw new Error('未识别到可导入的 OW64 Markdown 表格。')
+  }
+
+  let nextBoard = createDefaultOw64Board()
+  let hasRootCore = false
+  const rootPillarSet = new Set<PillarId>()
+
+  for (const row of rows) {
+    const content: CellContent = {
+      title: row.title,
+      subtitle: row.subtitle,
+    }
+
+    if (row.rowType === 'root-core') {
+      hasRootCore = true
+      nextBoard = setContentByTarget(nextBoard, { scope: 'core' }, content)
+      continue
+    }
+
+    if (row.rowType === 'root-pillar') {
+      const pillarId = PILLAR_ID_BY_MARKER[row.marker]
+      if (!pillarId) {
+        throw new Error(`Root Pillar 的 marker 无效: ${row.marker}`)
+      }
+      rootPillarSet.add(pillarId)
+      nextBoard = setContentByTarget(nextBoard, { scope: 'pillar', pillarId }, content)
+      continue
+    }
+
+    if (row.rowType === 'drill-core') {
+      const drillPath = parseDrillPathFromMarker(row.path)
+      if (!drillPath) {
+        throw new Error(`Drill Core 的 path 无效: ${row.path}`)
+      }
+      nextBoard = ensurePathExists(nextBoard, drillPath)
+      nextBoard = setContentByTarget(nextBoard, { scope: 'drillCore', path: drillPath }, content)
+      continue
+    }
+
+    const drillActionPath = parseDrillPathFromMarker(row.path)
+    if (!drillActionPath || drillActionPath.length < 2) {
+      throw new Error(`Drill Action 的 path 无效: ${row.path}`)
+    }
+
+    const parentPath = [drillActionPath[0], ...drillActionPath.slice(1, -1)] as DrillPath
+    const actionId = drillActionPath[drillActionPath.length - 1] as ActionId
+    nextBoard = ensurePathExists(nextBoard, parentPath)
+    nextBoard = setActionContentByPath(nextBoard, parentPath, actionId, content)
+  }
+
+  if (!hasRootCore) {
+    throw new Error('Markdown 缺少 Root Core 行。')
+  }
+
+  if (rootPillarSet.size !== PILLAR_CELLS.length) {
+    throw new Error('Markdown 缺少完整的 Root Pillar 行（需要 W1~W8）。')
+  }
+
+  return nextBoard
+}
+
 const sanitizeFileName = (value: string): string => {
   const cleaned = value
     .trim()
@@ -886,6 +1097,8 @@ function App() {
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
+  const [markdownImportFeedback, setMarkdownImportFeedback] = useState('')
+  const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const projects = useMemo(
     () =>
@@ -1174,6 +1387,48 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  const handleImportMarkdownClick = () => {
+    markdownFileInputRef.current?.click()
+  }
+
+  const handleImportMarkdownFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const content = typeof reader.result === 'string' ? reader.result : ''
+        const importedBoard = importOw64MarkdownContent(content)
+
+        setBoardByProject((prev) => {
+          const next = {
+            ...prev,
+            [selectedProjectId]: importedBoard,
+          }
+          persistOw64Board(selectedProjectId, importedBoard)
+          return next
+        })
+
+        resetEditingDraft()
+        resetMandalaLayer()
+        setMarkdownImportFeedback(`已导入 ${file.name}`)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '导入失败，请检查 Markdown 格式。'
+        setMarkdownImportFeedback(`导入失败：${message}`)
+      }
+    }
+
+    reader.onerror = () => {
+      setMarkdownImportFeedback('导入失败：文件读取异常。')
+    }
+
+    reader.readAsText(file, 'utf-8')
+  }
+
   return (
     <div className={`app ${isProjectDetailView ? 'is-focus-layout' : ''}`}>
       <div className={`app-body ${isProjectDetailView ? 'is-focus-body' : ''}`}>
@@ -1359,7 +1614,19 @@ function App() {
                     <button type="button" className="ghost-button" onClick={handleExportMarkdown}>
                       导出 Markdown
                     </button>
+                    <button type="button" className="ghost-button" onClick={handleImportMarkdownClick}>
+                      导入 Markdown
+                    </button>
+                    <input
+                      ref={markdownFileInputRef}
+                      type="file"
+                      accept=".md,text/markdown"
+                      onChange={handleImportMarkdownFile}
+                      style={{ display: 'none' }}
+                    />
                   </div>
+
+                  {markdownImportFeedback && <p className="mandala-path sidebar-mandala-path">{markdownImportFeedback}</p>}
 
                   {activeLayer === 'pillar' ? (
                     <p className="mandala-path sidebar-mandala-path">
