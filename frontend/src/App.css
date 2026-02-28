@@ -215,6 +215,12 @@
   font-family: inherit;
 }
 
+.project-textarea {
+  resize: vertical;
+  min-height: 5.4rem;
+  line-height: 1.45;
+}
+
 .project-input:focus-visible {
   outline: 2px solid #1b4332;
   outline-offset: 1px;
@@ -497,6 +503,7 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-muted);
+  white-space: pre-wrap;
 }
 
 .mandala-hint {
@@ -508,23 +515,42 @@
 .mandala-cell-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
 .mandala-cell-action {
-  border: 1px solid var(--border-strong);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
   border-radius: 999px;
-  padding: 0.3rem 0.75rem;
-  font-size: 0.78rem;
-  color: var(--text-primary);
-  background: #fffdf8;
+  padding: 0.26rem 0.68rem;
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--text-primary) 78%, var(--text-muted));
+  background: color-mix(in srgb, #fffdf8 72%, transparent);
   cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
-.mandala-cell-action.is-primary {
-  border-color: #1b4332;
-  color: #fefae0;
-  background: #1b4332;
+.mandala-cell-action:hover,
+.mandala-cell-action:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: #fffdf8;
+}
+
+.mandala-cell-action.is-icon {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.mandala-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
 }
 
 .mandala-editor {
@@ -552,6 +578,12 @@
   color: var(--text-primary);
   background: #fffdf8;
   font-family: inherit;
+}
+
+.mandala-textarea {
+  resize: vertical;
+  min-height: 5.2rem;
+  line-height: 1.45;
 }
 
 .mandala-input:focus-visible {
@@ -616,6 +648,10 @@
   margin: 0;
   color: var(--text-muted);
   line-height: 1.6;
+}
+
+.project-summary-text {
+  white-space: pre-wrap;
 }
 
 @media (max-width: 960px) {

@@ -618,23 +618,26 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
   }
 
   if (target.scope === 'pillar') {
+    const pillarId: PillarId = target.pillarId
+
     return {
       ...board,
       pillars: {
         ...board.pillars,
-        [target.pillarId]: content,
+        [pillarId]: content,
       },
       drills: {
         ...board.drills,
-        [target.pillarId]: {
-          ...board.drills[target.pillarId],
+        [pillarId]: {
+          ...board.drills[pillarId],
           core: content,
         },
       },
     }
   }
 
-  const [pillarId, ...actionPath] = target.path
+  const [rawPillarId, ...actionPath] = target.path
+  const pillarId: PillarId = rawPillarId
 
   if (actionPath.length === 0) {
     return {
@@ -1056,7 +1059,7 @@ function App() {
                     <div>
                       <p className="project-status">{project.status}</p>
                       <h2 className="panel-title">{project.name}</h2>
-                      <p className="panel-desc">{project.summary}</p>
+                      <p className="panel-desc project-summary-text">{project.summary}</p>
                     </div>
 
                     {projectEditingId === project.id ? (
@@ -1073,12 +1076,13 @@ function App() {
                         </label>
                         <label className="project-field" htmlFor={`project-summary-${project.id}`}>
                           <span>项目简介</span>
-                          <input
+                          <textarea
                             id={`project-summary-${project.id}`}
-                            className="project-input"
+                            className="project-input project-textarea"
                             value={projectDraftSummary}
                             onChange={(event) => setProjectDraftSummary(event.target.value)}
                             placeholder="输入项目简介"
+                            rows={3}
                           />
                         </label>
                         <label className="project-field" htmlFor={`project-status-${project.id}`}>
@@ -1149,7 +1153,7 @@ function App() {
                     )}
                   </div>
                 </div>
-                <p className="content-desc">{selectedProject?.summary}</p>
+                <p className="content-desc project-summary-text">{selectedProject?.summary}</p>
                 {projectEditingId === selectedProjectId && (
                   <div className="project-editor" role="group" aria-label="编辑项目信息">
                     <label className="project-field" htmlFor="project-name">
@@ -1164,12 +1168,13 @@ function App() {
                     </label>
                     <label className="project-field" htmlFor="project-summary">
                       <span>项目简介</span>
-                      <input
+                      <textarea
                         id="project-summary"
-                        className="project-input"
+                        className="project-input project-textarea"
                         value={projectDraftSummary}
                         onChange={(event) => setProjectDraftSummary(event.target.value)}
                         placeholder="输入项目简介"
+                        rows={3}
                       />
                     </label>
                     <label className="project-field" htmlFor="project-status">
@@ -1385,12 +1390,13 @@ function App() {
                                 </label>
                                 <label className="mandala-field" htmlFor={`subtitle-${cell.id}`}>
                                   <span>说明</span>
-                                  <input
+                                  <textarea
                                     id={`subtitle-${cell.id}`}
                                     value={draftSubtitle}
                                     onChange={(event) => setDraftSubtitle(event.target.value)}
-                                    className="mandala-input"
+                                    className="mandala-input mandala-textarea"
                                     placeholder="输入说明"
+                                    rows={3}
                                   />
                                 </label>
                                 <div className="mandala-actions">
@@ -1423,23 +1429,38 @@ function App() {
                                 <span className="mandala-marker">{cell.marker}</span>
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
-                                <p className="mandala-hint">点击进入 {cell.marker} 的 8 个行动点</p>
                                 <div className="mandala-cell-actions">
                                   <button
                                     type="button"
-                                    className="mandala-cell-action"
+                                    className="mandala-cell-action is-icon"
                                     onClick={() => handleStartEdit(target)}
+                                    title="编辑"
                                     aria-label={`编辑 ${cell.marker} ${content.title}`}
                                   >
-                                    编辑
+                                    <svg
+                                      aria-hidden="true"
+                                      className="mandala-icon"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        d="M4 20H8L18.5 9.5C19.3 8.7 19.3 7.3 18.5 6.5L17.5 5.5C16.7 4.7 15.3 4.7 14.5 5.5L4 16V20Z"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </svg>
                                   </button>
                                   <button
                                     type="button"
-                                    className="mandala-cell-action is-primary"
+                                    className="mandala-cell-action is-primary is-icon"
                                     onClick={() => handleOpenPillar(cell.id as PillarId)}
+                                    title="进入下钻"
                                     aria-label={`进入 ${cell.marker} 的 8 个行动点`}
                                   >
-                                    进入下钻
+                                    <span aria-hidden="true">⤢</span>
                                   </button>
                                 </div>
                               </article>
@@ -1492,12 +1513,13 @@ function App() {
                                   </label>
                                   <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
                                     <span>说明</span>
-                                    <input
+                                    <textarea
                                       id={`subtitle-${inputIdSuffix}`}
                                       value={draftSubtitle}
                                       onChange={(event) => setDraftSubtitle(event.target.value)}
-                                      className="mandala-input"
+                                      className="mandala-input mandala-textarea"
                                       placeholder="输入说明"
+                                      rows={3}
                                     />
                                   </label>
                                   <div className="mandala-actions">
