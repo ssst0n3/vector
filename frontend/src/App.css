@@ -589,8 +589,42 @@
 
 .mandala-cell.is-add {
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 92%, transparent), color-mix(in srgb, #f3f0e8 92%, transparent));
+  border-color: color-mix(in srgb, var(--border-strong) 36%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 98%, transparent), color-mix(in srgb, #f7f4ec 97%, transparent));
+  box-shadow: var(--shadow-soft);
+  padding: 0;
+}
+
+.mandala-cell.is-add:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--border-strong) 48%, transparent);
+  box-shadow: var(--shadow-soft);
+}
+
+.mandala-add-button {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--text-primary) 58%, var(--text-muted));
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.mandala-add-button:hover,
+.mandala-add-button:focus-visible {
+  color: color-mix(in srgb, var(--text-primary) 72%, var(--text-muted));
+  transform: scale(1.03);
+}
+
+.mandala-add-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--border-strong) 62%, transparent);
+  outline-offset: -4px;
 }
 
 .mandala-marker {

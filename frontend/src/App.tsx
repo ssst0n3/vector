@@ -1551,10 +1551,29 @@ function App() {
     setDraftSubtitle(content.subtitle)
   }
 
-  const handleStartAdd = (target: EditingTarget) => {
-    setEditingTarget(target)
-    setDraftTitle('')
-    setDraftSubtitle('')
+  const handleQuickAdd = (target: EditingTarget) => {
+    if (!selectedProjectId) {
+      return
+    }
+
+    resetEditingDraft()
+    const defaultContent = getDefaultContentByTarget(target, currentBoard)
+
+    setBoardByProject((prev) => {
+      const sourceBoard = prev[selectedProjectId]
+      if (!sourceBoard) {
+        return prev
+      }
+
+      const updatedBoard = setContentByTarget(sourceBoard, target, defaultContent)
+      const next = {
+        ...prev,
+        [selectedProjectId]: updatedBoard,
+      }
+
+      persistOw64Board(selectedProjectId, updatedBoard)
+      return next
+    })
   }
 
   const handleCancelEdit = () => {
@@ -2410,20 +2429,15 @@ function App() {
                                 className={`mandala-cell is-add ${cell.role === 'core' ? 'is-core' : ''}`}
                                 aria-label={`${cell.marker} 添加卡片`}
                               >
-                                <span className="mandala-marker">{cell.marker}</span>
-                                <h2 className="mandala-title">添加卡片</h2>
-                                <p className="mandala-subtitle">点击添加当前卡片</p>
-                                <div className="mandala-cell-actions">
-                                  <button
-                                    type="button"
-                                    className="mandala-cell-action is-icon"
-                                    onClick={() => handleStartAdd(target)}
-                                    title="添加"
-                                    aria-label={`添加 ${cell.marker} 卡片`}
-                                  >
-                                    <span aria-hidden="true">＋</span>
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  className="mandala-add-button"
+                                  onClick={() => handleQuickAdd(target)}
+                                  title="添加"
+                                  aria-label={`添加 ${cell.marker} 卡片`}
+                                >
+                                  <span aria-hidden="true">＋</span>
+                                </button>
                               </article>
                             )
                           }
@@ -2685,20 +2699,15 @@ function App() {
                                 className="mandala-cell is-add"
                                 aria-label={`${marker} 添加卡片`}
                               >
-                                <span className="mandala-marker">{marker}</span>
-                                <h2 className="mandala-title">添加卡片</h2>
-                                <p className="mandala-subtitle">点击添加行动卡片</p>
-                                <div className="mandala-cell-actions">
-                                  <button
-                                    type="button"
-                                    className="mandala-cell-action is-icon"
-                                    onClick={() => handleStartAdd(actionTarget)}
-                                    title="添加"
-                                    aria-label={`添加 ${marker} 卡片`}
-                                  >
-                                    <span aria-hidden="true">＋</span>
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  className="mandala-add-button"
+                                  onClick={() => handleQuickAdd(actionTarget)}
+                                  title="添加"
+                                  aria-label={`添加 ${marker} 卡片`}
+                                >
+                                  <span aria-hidden="true">＋</span>
+                                </button>
                               </article>
                             )
                           }
