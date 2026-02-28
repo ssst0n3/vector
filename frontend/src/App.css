@@ -655,14 +655,20 @@
   white-space: pre-wrap;
 }
 
-.mandala-cell .mandala-title,
-.mandala-cell .mandala-subtitle {
+.mandala-cell .mandala-title {
   padding-right: 2.4rem;
 }
 
-.mandala-cell.has-drill-action .mandala-title,
-.mandala-cell.has-drill-action .mandala-subtitle {
+.mandala-cell .mandala-subtitle {
+  padding-right: 0;
+}
+
+.mandala-cell.has-drill-action .mandala-title {
   padding-right: 6.4rem;
+}
+
+.mandala-cell.has-drill-action .mandala-subtitle {
+  padding-right: 0;
 }
 
 .mandala-hint {

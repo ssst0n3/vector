@@ -2299,8 +2299,14 @@ function App() {
                                     打开
                                   </button>
                                 </div>
-                                <div className="ow64-mini-grid">
-                                  {ROOT_CELLS.map((cell) => {
+                              <div className="ow64-mini-grid">
+                                  {ROOT_CELLS.filter((cell) => {
+                                    if (cell.id === 'objective') {
+                                      return true
+                                    }
+
+                                    return currentBoard.visiblePillars[cell.id as PillarId]
+                                  }).map((cell) => {
                                     const target: EditingTarget =
                                       cell.id === 'objective'
                                         ? { scope: 'core' }
@@ -2328,28 +2334,47 @@ function App() {
                                 </button>
                               </div>
                               <div className="ow64-mini-grid">
-                                {PILLAR_GRID_LAYOUT.map((gridItem) => {
-                                  const target: EditingTarget =
-                                    gridItem.type === 'center'
-                                      ? { scope: 'pillar', pillarId }
-                                      : { scope: 'drillCore', path: [pillarId] as DrillPath }
-                                  const marker =
-                                    gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
-                                  const content =
-                                    gridItem.type === 'center'
-                                      ? getContentByTarget(currentBoard, target)
-                                      : currentBoard.drills[pillarId].actions[gridItem.actionId]
+                                {(() => {
+                                  const pillarVisible = currentBoard.visiblePillars[pillarId]
+                                  const visibleMiniCells = PILLAR_GRID_LAYOUT.filter((gridItem) => {
+                                    if (!pillarVisible) {
+                                      return false
+                                    }
 
-                                  return (
-                                    <div
-                                      key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
-                                      className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
-                                    >
-                                      <span className="ow64-mini-marker">{marker}</span>
-                                      <p className="ow64-mini-text">{content.title}</p>
-                                    </div>
-                                  )
-                                })}
+                                    if (gridItem.type === 'center') {
+                                      return true
+                                    }
+
+                                    return currentBoard.drills[pillarId].visibleActions[gridItem.actionId]
+                                  }).map((gridItem) => {
+                                    const target: EditingTarget =
+                                      gridItem.type === 'center'
+                                        ? { scope: 'pillar', pillarId }
+                                        : { scope: 'drillCore', path: [pillarId] as DrillPath }
+                                    const marker =
+                                      gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
+                                    const content =
+                                      gridItem.type === 'center'
+                                        ? getContentByTarget(currentBoard, target)
+                                        : currentBoard.drills[pillarId].actions[gridItem.actionId]
+
+                                    return (
+                                      <div
+                                        key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
+                                        className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
+                                      >
+                                        <span className="ow64-mini-marker">{marker}</span>
+                                        <p className="ow64-mini-text">{content.title}</p>
+                                      </div>
+                                    )
+                                  })
+
+                                  if (visibleMiniCells.length === 0) {
+                                    return <p className="ow64-mini-text">暂无可展示卡片</p>
+                                  }
+
+                                  return visibleMiniCells
+                                })()}
                               </div>
                             </article>
                           )
