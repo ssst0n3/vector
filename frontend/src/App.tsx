@@ -1176,50 +1176,205 @@ function App() {
 
   return (
     <div className={`app ${isProjectDetailView ? 'is-focus-layout' : ''}`}>
-      {!isProjectDetailView && (
-        <header className="app-header">
-          <div className="brand">
-            <span className="brand-mark">OW64</span>
-            <div className="brand-text">
-              <p className="brand-title">Project Layout</p>
-              <p className="brand-subtitle">Focus and execution workspace</p>
-            </div>
-          </div>
-          <div className="header-meta">
-            <p className="header-label">Workspace</p>
-            <p className="header-value">Layout v0.1</p>
-          </div>
-        </header>
-      )}
-
       <div className={`app-body ${isProjectDetailView ? 'is-focus-body' : ''}`}>
-        {!isProjectDetailView && (
-          <aside className="app-sidebar">
-            <nav className="side-nav" aria-label="Primary">
-              <p className="nav-title">Navigation</p>
-              <div className="nav-items">
-                <button
-                  type="button"
-                  className={`nav-item ${view === 'home' ? 'is-active' : ''}`}
-                  onClick={() => handleViewChange('home')}
-                  aria-current={view === 'home' ? 'page' : undefined}
-                >
-                  <span className="nav-label">首页</span>
-                  <span className="nav-desc">项目与任务概览</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-item ${view === 'projects' ? 'is-active' : ''}`}
-                  onClick={() => handleViewChange('projects')}
-                  aria-current={view === 'projects' ? 'page' : undefined}
-                >
-                  <span className="nav-label">项目管理</span>
-                  <span className="nav-desc">项目列表与管理入口</span>
-                </button>
-              </div>
-            </nav>
-          </aside>
-        )}
+        <aside className={`app-sidebar ${isProjectDetailView ? 'is-focus-sidebar' : ''}`}>
+          <nav className="side-nav" aria-label="Primary">
+            <p className="nav-title">Navigation</p>
+            <div className="nav-items">
+              <button
+                type="button"
+                className={`nav-item ${view === 'home' ? 'is-active' : ''}`}
+                onClick={() => handleViewChange('home')}
+                aria-current={view === 'home' ? 'page' : undefined}
+              >
+                <span className="nav-label">首页</span>
+                <span className="nav-desc">项目与任务概览</span>
+              </button>
+              <button
+                type="button"
+                className={`nav-item ${view === 'projects' ? 'is-active' : ''}`}
+                onClick={() => handleViewChange('projects')}
+                aria-current={view === 'projects' ? 'page' : undefined}
+              >
+                <span className="nav-label">项目管理</span>
+                <span className="nav-desc">项目列表与管理入口</span>
+              </button>
+            </div>
+          </nav>
+
+          {isProjectDetailView && (
+            <>
+              <section className="sidebar-section" aria-label="Project context">
+                <p className="nav-title">Project Workspace</p>
+                <h2 className="sidebar-project-title">{selectedProject?.name}</h2>
+                <p className="sidebar-project-status">{selectedProject?.status}</p>
+                <div className="sidebar-actions">
+                  <button type="button" className="ghost-button" onClick={handleBackToProjects}>
+                    返回项目管理
+                  </button>
+                  {projectEditingId !== selectedProjectId && (
+                    <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(selectedProjectId)}>
+                      编辑项目信息
+                    </button>
+                  )}
+                  {projectEditingId !== selectedProjectId && (
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => setShowProjectInfo((prev) => !prev)}
+                      aria-expanded={showProjectInfo}
+                    >
+                      {showProjectInfo ? '收起项目信息' : '项目信息'}
+                    </button>
+                  )}
+                </div>
+
+                <section className="tab-bar sidebar-tab-bar" role="tablist" aria-label="Project tabs">
+                  {PROJECT_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      className={`tab-item ${activeTab === tab.id ? 'is-active' : ''}`}
+                      aria-selected={activeTab === tab.id}
+                      onClick={() => handleTabChange(tab.id)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </section>
+
+                {showProjectInfo && projectEditingId !== selectedProjectId && (
+                  <p className="focus-summary project-summary-text">{selectedProject?.summary}</p>
+                )}
+
+                {projectEditingId === selectedProjectId && (
+                  <div className="project-editor focus-project-editor" role="group" aria-label="编辑项目信息">
+                    <label className="project-field" htmlFor="project-name">
+                      <span>项目名称</span>
+                      <input
+                        id="project-name"
+                        className="project-input"
+                        value={projectDraftName}
+                        onChange={(event) => setProjectDraftName(event.target.value)}
+                        placeholder="输入项目名称"
+                      />
+                    </label>
+                    <label className="project-field" htmlFor="project-summary">
+                      <span>项目简介</span>
+                      <textarea
+                        id="project-summary"
+                        className="project-input project-textarea"
+                        value={projectDraftSummary}
+                        onChange={(event) => setProjectDraftSummary(event.target.value)}
+                        placeholder="输入项目简介"
+                        rows={3}
+                      />
+                    </label>
+                    <label className="project-field" htmlFor="project-status">
+                      <span>项目状态</span>
+                      <select
+                        id="project-status"
+                        className="project-input"
+                        value={projectDraftStatus}
+                        onChange={(event) => setProjectDraftStatus(event.target.value)}
+                      >
+                        {PROJECT_STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                        {!PROJECT_STATUS_OPTIONS.includes(projectDraftStatus as (typeof PROJECT_STATUS_OPTIONS)[number]) && (
+                          <option value={projectDraftStatus}>{projectDraftStatus}</option>
+                        )}
+                      </select>
+                    </label>
+                    <div className="project-actions">
+                      <button
+                        type="button"
+                        className="mandala-action"
+                        onClick={handleProjectEditSave}
+                        disabled={!projectDraftName.trim()}
+                      >
+                        保存
+                      </button>
+                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
+                        取消
+                      </button>
+                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditReset}>
+                        恢复默认
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {activeTab === 'mandala' && (
+                <section className="sidebar-section" aria-label="OW64 controls">
+                  <p className="nav-title">OW64 Controls</p>
+                  <div className="mandala-layer-switch is-vertical" role="tablist" aria-label="OW64 views">
+                    <button
+                      type="button"
+                      role="tab"
+                      className={`layer-switch-item ${activeLayer === 'root' ? 'is-active' : ''}`}
+                      aria-selected={activeLayer === 'root'}
+                      onClick={() => handleMandalaLayerChange('root')}
+                    >
+                      OW9 主盘
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      className={`layer-switch-item ${activeLayer === 'pillar' ? 'is-active' : ''}`}
+                      aria-selected={activeLayer === 'pillar'}
+                      onClick={() => handleMandalaLayerChange('pillar')}
+                    >
+                      下钻视图
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      className={`layer-switch-item ${activeLayer === 'overview' ? 'is-active' : ''}`}
+                      aria-selected={activeLayer === 'overview'}
+                      onClick={() => handleMandalaLayerChange('overview')}
+                    >
+                      OW64 全景
+                    </button>
+                  </div>
+
+                  <div className="mandala-toolbar-actions sidebar-mandala-actions">
+                    {activeLayer === 'pillar' && activeDrillPath.length > 1 && (
+                      <button type="button" className="ghost-button" onClick={handleBackOneLevel}>
+                        返回上一级
+                      </button>
+                    )}
+                    {activeLayer === 'pillar' && (
+                      <button type="button" className="ghost-button" onClick={handleBackToRoot}>
+                        返回 OW9 主盘
+                      </button>
+                    )}
+                    <button type="button" className="ghost-button" onClick={handleExportCsv}>
+                      导出 CSV
+                    </button>
+                    <button type="button" className="ghost-button" onClick={handleExportMarkdown}>
+                      导出 Markdown
+                    </button>
+                  </div>
+
+                  {activeLayer === 'pillar' ? (
+                    <p className="mandala-path sidebar-mandala-path">
+                      OW64 / {getMarkerByPath(activeDrillPath)} / {activeDrillTitleSegments.join(' / ')}
+                    </p>
+                  ) : activeLayer === 'overview' ? (
+                    <p className="mandala-path sidebar-mandala-path">全景展示 8 个方向与各自 8 个行动点</p>
+                  ) : (
+                    <p className="mandala-path sidebar-mandala-path">点击 W1~W8 可进入对应行动九宫格</p>
+                  )}
+                </section>
+              )}
+            </>
+          )}
+        </aside>
 
         <main className={`app-main ${isProjectDetailView ? 'is-project-detail' : ''} ${isProjectMandalaView ? 'is-project-mandala' : ''}`}>
           {view === 'home' && (
@@ -1334,180 +1489,8 @@ function App() {
 
           {view === 'projectDetail' && (
             <>
-              <section className="focus-topbar" aria-label="Project workspace header">
-                <div className="focus-topbar-main">
-                  <div className="focus-title-group">
-                    <p className="content-eyebrow">Project Workspace</p>
-                    <h1 className="focus-title">{selectedProject?.name}</h1>
-                    <p className="focus-status">{selectedProject?.status}</p>
-                  </div>
-                  <div className="focus-actions">
-                    <button type="button" className="ghost-button" onClick={handleBackToProjects}>
-                      返回项目管理
-                    </button>
-                    {projectEditingId !== selectedProjectId && (
-                      <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(selectedProjectId)}>
-                        编辑项目信息
-                      </button>
-                    )}
-                    {projectEditingId !== selectedProjectId && (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={() => setShowProjectInfo((prev) => !prev)}
-                        aria-expanded={showProjectInfo}
-                      >
-                        {showProjectInfo ? '收起项目信息' : '项目信息'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <section className="tab-bar focus-tab-bar" role="tablist" aria-label="Project tabs">
-                  {PROJECT_TABS.map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      className={`tab-item ${activeTab === tab.id ? 'is-active' : ''}`}
-                      aria-selected={activeTab === tab.id}
-                      onClick={() => handleTabChange(tab.id)}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </section>
-
-                {showProjectInfo && projectEditingId !== selectedProjectId && (
-                  <p className="focus-summary project-summary-text">{selectedProject?.summary}</p>
-                )}
-
-                {projectEditingId === selectedProjectId && (
-                  <div className="project-editor focus-project-editor" role="group" aria-label="编辑项目信息">
-                    <label className="project-field" htmlFor="project-name">
-                      <span>项目名称</span>
-                      <input
-                        id="project-name"
-                        className="project-input"
-                        value={projectDraftName}
-                        onChange={(event) => setProjectDraftName(event.target.value)}
-                        placeholder="输入项目名称"
-                      />
-                    </label>
-                    <label className="project-field" htmlFor="project-summary">
-                      <span>项目简介</span>
-                      <textarea
-                        id="project-summary"
-                        className="project-input project-textarea"
-                        value={projectDraftSummary}
-                        onChange={(event) => setProjectDraftSummary(event.target.value)}
-                        placeholder="输入项目简介"
-                        rows={3}
-                      />
-                    </label>
-                    <label className="project-field" htmlFor="project-status">
-                      <span>项目状态</span>
-                      <select
-                        id="project-status"
-                        className="project-input"
-                        value={projectDraftStatus}
-                        onChange={(event) => setProjectDraftStatus(event.target.value)}
-                      >
-                        {PROJECT_STATUS_OPTIONS.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                        {!PROJECT_STATUS_OPTIONS.includes(projectDraftStatus as (typeof PROJECT_STATUS_OPTIONS)[number]) && (
-                          <option value={projectDraftStatus}>{projectDraftStatus}</option>
-                        )}
-                      </select>
-                    </label>
-                    <div className="project-actions">
-                      <button
-                        type="button"
-                        className="mandala-action"
-                        onClick={handleProjectEditSave}
-                        disabled={!projectDraftName.trim()}
-                      >
-                        保存
-                      </button>
-                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
-                        取消
-                      </button>
-                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditReset}>
-                        恢复默认
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </section>
-
               {activeTab === 'mandala' ? (
                 <section className="mandala-layout focus-content" aria-label="曼德拉九宫格 OW64">
-                  <div className="mandala-toolbar">
-                    <div className="mandala-layer-switch" role="tablist" aria-label="OW64 views">
-                      <button
-                        type="button"
-                        role="tab"
-                        className={`layer-switch-item ${activeLayer === 'root' ? 'is-active' : ''}`}
-                        aria-selected={activeLayer === 'root'}
-                        onClick={() => handleMandalaLayerChange('root')}
-                      >
-                        OW9 主盘
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        className={`layer-switch-item ${activeLayer === 'pillar' ? 'is-active' : ''}`}
-                        aria-selected={activeLayer === 'pillar'}
-                        onClick={() => handleMandalaLayerChange('pillar')}
-                      >
-                        下钻视图
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        className={`layer-switch-item ${activeLayer === 'overview' ? 'is-active' : ''}`}
-                        aria-selected={activeLayer === 'overview'}
-                        onClick={() => handleMandalaLayerChange('overview')}
-                      >
-                        OW64 全景
-                      </button>
-                    </div>
-
-                    <div className="mandala-toolbar-meta">
-                      <div className="mandala-toolbar-actions">
-                        {activeLayer === 'pillar' && activeDrillPath.length > 1 && (
-                          <button type="button" className="ghost-button" onClick={handleBackOneLevel}>
-                            返回上一级
-                          </button>
-                        )}
-                        {activeLayer === 'pillar' && (
-                          <button type="button" className="ghost-button" onClick={handleBackToRoot}>
-                            返回 OW9 主盘
-                          </button>
-                        )}
-                        <button type="button" className="ghost-button" onClick={handleExportCsv}>
-                          导出 CSV
-                        </button>
-                        <button type="button" className="ghost-button" onClick={handleExportMarkdown}>
-                          导出 Markdown
-                        </button>
-                      </div>
-
-                      {activeLayer === 'pillar' ? (
-                        <p className="mandala-path">
-                          OW64 / {getMarkerByPath(activeDrillPath)} / {activeDrillTitleSegments.join(' / ')}
-                        </p>
-                      ) : activeLayer === 'overview' ? (
-                        <p className="mandala-path">全景展示 8 个方向与各自 8 个行动点</p>
-                      ) : (
-                        <p className="mandala-path">点击 W1~W8 可进入对应行动九宫格</p>
-                      )}
-                    </div>
-                  </div>
-
                   {activeLayer === 'overview' ? (
                     <div className="ow64-overview-scroll">
                       <div className="ow64-overview-grid">
