@@ -588,6 +588,23 @@
   box-shadow: var(--shadow-tight);
 }
 
+.mandala-cell.is-draggable {
+  cursor: grab;
+}
+
+.mandala-cell.is-draggable:active {
+  cursor: grabbing;
+}
+
+.mandala-cell.is-drag-source {
+  opacity: 0.72;
+}
+
+.mandala-cell.is-drag-over {
+  border-color: color-mix(in srgb, var(--border-strong) 78%, #1b4332 22%);
+  box-shadow: var(--shadow-tight);
+}
+
 .mandala-cell.is-core {
   border-color: #1b4332;
   background: linear-gradient(135deg, rgba(27, 67, 50, 0.15), rgba(8, 28, 21, 0.06));

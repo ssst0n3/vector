@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, DragEvent } from 'react'
 import './App.css'
 
 const LEGACY_DEFAULT_PROJECTS = [
@@ -186,6 +186,10 @@ type EditingTarget =
   | { scope: 'core' }
   | { scope: 'pillar'; pillarId: PillarId }
   | { scope: 'drillCore'; path: DrillPath }
+  | { scope: 'drillAction'; path: DrillPath; actionId: ActionId }
+
+type DraggableCardTarget =
+  | { scope: 'pillar'; pillarId: PillarId }
   | { scope: 'drillAction'; path: DrillPath; actionId: ActionId }
 
 const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
@@ -724,6 +728,139 @@ const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
   }
 
   return false
+}
+
+const isSameDraggableTarget = (left: DraggableCardTarget | null, right: DraggableCardTarget) => {
+  if (!left || left.scope !== right.scope) {
+    return false
+  }
+
+  if (left.scope === 'pillar' && right.scope === 'pillar') {
+    return left.pillarId === right.pillarId
+  }
+
+  if (left.scope === 'drillAction' && right.scope === 'drillAction') {
+    return isSamePath(left.path, right.path) && left.actionId === right.actionId
+  }
+
+  return false
+}
+
+const canSwapDraggableTargets = (source: DraggableCardTarget, target: DraggableCardTarget) => {
+  if (source.scope !== target.scope) {
+    return false
+  }
+
+  if (source.scope === 'pillar' && target.scope === 'pillar') {
+    return source.pillarId !== target.pillarId
+  }
+
+  if (source.scope === 'drillAction' && target.scope === 'drillAction') {
+    return source.actionId !== target.actionId && isSamePath(source.path, target.path)
+  }
+
+  return false
+}
+
+const getDraggableCardKey = (target: DraggableCardTarget): string => {
+  if (target.scope === 'pillar') {
+    return `root:${target.pillarId}`
+  }
+
+  return `drill:${target.path.join('>')}:${target.actionId}`
+}
+
+const swapRootPillars = (board: Ow64Board, left: PillarId, right: PillarId): Ow64Board => {
+  if (left === right) {
+    return board
+  }
+
+  return {
+    ...board,
+    pillars: {
+      ...board.pillars,
+      [left]: board.pillars[right],
+      [right]: board.pillars[left],
+    },
+    drills: {
+      ...board.drills,
+      [left]: board.drills[right],
+      [right]: board.drills[left],
+    },
+    visiblePillars: {
+      ...board.visiblePillars,
+      [left]: board.visiblePillars[right],
+      [right]: board.visiblePillars[left],
+    },
+  }
+}
+
+const swapDrillActionSlots = (board: Ow64Board, path: DrillPath, left: ActionId, right: ActionId): Ow64Board => {
+  if (left === right) {
+    return board
+  }
+
+  const [pillarId, ...actionPath] = path
+
+  const swapNodeSlots = (node: DrillNode): DrillNode => {
+    return {
+      ...node,
+      actions: {
+        ...node.actions,
+        [left]: node.actions[right],
+        [right]: node.actions[left],
+      },
+      visibleActions: {
+        ...node.visibleActions,
+        [left]: node.visibleActions[right],
+        [right]: node.visibleActions[left],
+      },
+      children: {
+        ...node.children,
+        [left]: node.children[right],
+        [right]: node.children[left],
+      },
+    }
+  }
+
+  const updateNode = (node: DrillNode, depth: number): DrillNode => {
+    if (depth >= actionPath.length) {
+      return swapNodeSlots(node)
+    }
+
+    const nextActionId = actionPath[depth]
+    const childNode = node.children[nextActionId]
+    if (!childNode) {
+      return node
+    }
+
+    const nextChildNode = updateNode(childNode, depth + 1)
+    if (nextChildNode === childNode) {
+      return node
+    }
+
+    return {
+      ...node,
+      children: {
+        ...node.children,
+        [nextActionId]: nextChildNode,
+      },
+    }
+  }
+
+  const currentRoot = board.drills[pillarId]
+  const nextRoot = updateNode(currentRoot, 0)
+  if (nextRoot === currentRoot) {
+    return board
+  }
+
+  return {
+    ...board,
+    drills: {
+      ...board.drills,
+      [pillarId]: nextRoot,
+    },
+  }
 }
 
 const getNodeByPath = (board: Ow64Board, path: DrillPath): DrillNode => {
@@ -1361,6 +1498,8 @@ function App() {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
   const [markdownImportFeedback, setMarkdownImportFeedback] = useState('')
+  const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const selectedProject = useMemo(
@@ -1776,6 +1915,69 @@ function App() {
   const handleBackToRoot = () => {
     resetEditingDraft()
     resetMandalaLayer()
+  }
+
+  const handleCardDragStart = (event: DragEvent<HTMLElement>, target: DraggableCardTarget) => {
+    setDragSourceTarget(target)
+    setDragOverKey(null)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', getDraggableCardKey(target))
+  }
+
+  const handleCardDragOver = (event: DragEvent<HTMLElement>, target: DraggableCardTarget) => {
+    if (!dragSourceTarget || !canSwapDraggableTargets(dragSourceTarget, target)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const nextKey = getDraggableCardKey(target)
+    if (dragOverKey !== nextKey) {
+      setDragOverKey(nextKey)
+    }
+  }
+
+  const handleCardDrop = (event: DragEvent<HTMLElement>, target: DraggableCardTarget) => {
+    event.preventDefault()
+
+    const source = dragSourceTarget
+    setDragOverKey(null)
+    setDragSourceTarget(null)
+
+    if (!source || !selectedProjectId || !canSwapDraggableTargets(source, target)) {
+      return
+    }
+
+    setBoardByProject((prev) => {
+      const sourceBoard = prev[selectedProjectId]
+      if (!sourceBoard) {
+        return prev
+      }
+
+      let updatedBoard = sourceBoard
+      if (source.scope === 'pillar' && target.scope === 'pillar') {
+        updatedBoard = swapRootPillars(sourceBoard, source.pillarId, target.pillarId)
+      } else if (source.scope === 'drillAction' && target.scope === 'drillAction') {
+        updatedBoard = swapDrillActionSlots(sourceBoard, source.path, source.actionId, target.actionId)
+      }
+
+      if (updatedBoard === sourceBoard) {
+        return prev
+      }
+
+      const next = {
+        ...prev,
+        [selectedProjectId]: updatedBoard,
+      }
+
+      persistOw64Board(selectedProjectId, updatedBoard)
+      return next
+    })
+  }
+
+  const handleCardDragEnd = () => {
+    setDragSourceTarget(null)
+    setDragOverKey(null)
   }
 
   const handleExportMarkdown = () => {
@@ -2392,6 +2594,11 @@ function App() {
                           const content = getContentByTarget(currentBoard, target)
                           const rootVisible = target.scope === 'core' ? true : currentBoard.visiblePillars[target.pillarId]
                           const editing = isSameTarget(editingTarget, target)
+                          const rootDragTarget: DraggableCardTarget | null =
+                            target.scope === 'pillar' ? { scope: 'pillar', pillarId: target.pillarId } : null
+                          const rootDragKey = rootDragTarget ? getDraggableCardKey(rootDragTarget) : null
+                          const isRootDragOver = rootDragKey ? dragOverKey === rootDragKey : false
+                          const isRootDragSource = rootDragTarget ? isSameDraggableTarget(dragSourceTarget, rootDragTarget) : false
 
                           if (editing) {
                             return (
@@ -2469,7 +2676,16 @@ function App() {
 
                           if (cell.role === 'pillar') {
                             return (
-                              <article key={cell.id} className="mandala-cell has-drill-action" aria-label={`${cell.marker} ${content.title}`}>
+                              <article
+                                key={cell.id}
+                                className={`mandala-cell has-drill-action is-draggable ${isRootDragOver ? 'is-drag-over' : ''} ${isRootDragSource ? 'is-drag-source' : ''}`}
+                                aria-label={`${cell.marker} ${content.title}`}
+                                draggable
+                                onDragStart={(event) => handleCardDragStart(event, rootDragTarget as DraggableCardTarget)}
+                                onDragOver={(event) => handleCardDragOver(event, rootDragTarget as DraggableCardTarget)}
+                                onDrop={(event) => handleCardDrop(event, rootDragTarget as DraggableCardTarget)}
+                                onDragEnd={handleCardDragEnd}
+                              >
                                 <span className="mandala-marker">{cell.marker}</span>
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
@@ -2744,11 +2960,25 @@ function App() {
                             return null
                           }
 
+                          const actionDragTarget: DraggableCardTarget = {
+                            scope: 'drillAction',
+                            path: activeDrillPath,
+                            actionId: gridItem.actionId,
+                          }
+                          const actionDragKey = getDraggableCardKey(actionDragTarget)
+                          const isActionDragOver = dragOverKey === actionDragKey
+                          const isActionDragSource = isSameDraggableTarget(dragSourceTarget, actionDragTarget)
+
                           return (
                             <article
                               key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
-                              className="mandala-cell has-drill-action"
+                              className={`mandala-cell has-drill-action is-draggable ${isActionDragOver ? 'is-drag-over' : ''} ${isActionDragSource ? 'is-drag-source' : ''}`}
                               aria-label={`${marker} ${actionContent.title}`}
+                              draggable
+                              onDragStart={(event) => handleCardDragStart(event, actionDragTarget)}
+                              onDragOver={(event) => handleCardDragOver(event, actionDragTarget)}
+                              onDrop={(event) => handleCardDrop(event, actionDragTarget)}
+                              onDragEnd={handleCardDragEnd}
                             >
                               <span className="mandala-marker">{marker}</span>
                               <h2 className="mandala-title">{actionContent.title}</h2>
