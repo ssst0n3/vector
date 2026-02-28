@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import './App.css'
 
-const DEFAULT_PROJECTS = [
+const LEGACY_DEFAULT_PROJECTS = [
   {
     id: 'atlas',
     name: 'Atlas Initiative',
@@ -131,13 +131,14 @@ const OVERVIEW_GRID_LAYOUT = ['w1', 'w2', 'w3', 'w4', 'objective', 'w5', 'w6', '
 
 type ViewMode = 'home' | 'projects' | 'projectDetail'
 type MandalaLayer = 'root' | 'pillar' | 'overview'
-type ProjectId = (typeof DEFAULT_PROJECTS)[number]['id']
-type ProjectTabId = (typeof PROJECT_TABS)[number]['id']
-type ProjectMeta = {
+type ProjectId = string
+type ProjectItem = {
+  id: ProjectId
   name: string
   summary: string
   status: string
 }
+type ProjectTabId = (typeof PROJECT_TABS)[number]['id']
 type RootCell = (typeof ROOT_CELLS)[number]
 type RootCellId = RootCell['id']
 type PillarId = Exclude<RootCellId, 'objective'>
@@ -184,19 +185,8 @@ type EditingTarget =
 
 const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
-const PROJECT_META_STORAGE_KEY = 'project:meta:v1'
-
-const DEFAULT_PROJECT_META_BY_ID = DEFAULT_PROJECTS.reduce(
-  (acc, project) => {
-    acc[project.id] = {
-      name: project.name,
-      summary: project.summary,
-      status: project.status,
-    }
-    return acc
-  },
-  {} as Record<ProjectId, ProjectMeta>,
-)
+const PROJECT_LIST_STORAGE_KEY = 'project:list:v1'
+const LEGACY_PROJECT_META_STORAGE_KEY = 'project:meta:v1'
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
 
@@ -489,59 +479,174 @@ const persistOw64Board = (projectId: ProjectId, board: Ow64Board) => {
   window.localStorage.setItem(`${NEW_STORAGE_KEY_PREFIX}${projectId}`, JSON.stringify(board))
 }
 
-const loadProjectMetaById = (): Record<ProjectId, ProjectMeta> => {
-  const defaults = DEFAULT_PROJECTS.reduce(
-    (acc, project) => {
-      acc[project.id] = {
-        ...DEFAULT_PROJECT_META_BY_ID[project.id],
-      }
-      return acc
-    },
-    {} as Record<ProjectId, ProjectMeta>,
-  )
-
-  if (typeof window === 'undefined') {
-    return defaults
-  }
-
-  const raw = window.localStorage.getItem(PROJECT_META_STORAGE_KEY)
-  if (!raw) {
-    return defaults
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<Record<ProjectId, Partial<ProjectMeta>>>
-
-    for (const project of DEFAULT_PROJECTS) {
-      const incoming = parsed[project.id]
-      if (!incoming) {
-        continue
-      }
-
-      const name = typeof incoming.name === 'string' ? incoming.name : null
-      const summary = typeof incoming.summary === 'string' ? incoming.summary : null
-      const status = typeof incoming.status === 'string' ? incoming.status : null
-
-      defaults[project.id] = {
-        name: name ?? defaults[project.id].name,
-        summary: summary ?? defaults[project.id].summary,
-        status: status ?? defaults[project.id].status,
-      }
-    }
-
-    return defaults
-  } catch {
-    return defaults
-  }
-}
-
-const persistProjectMetaById = (metaById: Record<ProjectId, ProjectMeta>) => {
+const removeOw64Board = (projectId: ProjectId) => {
   if (typeof window === 'undefined') {
     return
   }
 
-  window.localStorage.setItem(PROJECT_META_STORAGE_KEY, JSON.stringify(metaById))
+  window.localStorage.removeItem(`${NEW_STORAGE_KEY_PREFIX}${projectId}`)
+  window.localStorage.removeItem(`${LEGACY_STORAGE_KEY_PREFIX}${projectId}`)
 }
+
+const isProjectItem = (value: unknown): value is ProjectItem => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const maybe = value as Partial<ProjectItem>
+  return (
+    typeof maybe.id === 'string' &&
+    typeof maybe.name === 'string' &&
+    typeof maybe.summary === 'string' &&
+    typeof maybe.status === 'string'
+  )
+}
+
+const sanitizeProjectItem = (project: ProjectItem): ProjectItem | null => {
+  const id = project.id.trim()
+  const name = project.name.trim()
+  if (!id || !name) {
+    return null
+  }
+
+  return {
+    id,
+    name,
+    summary: project.summary.trim(),
+    status: project.status.trim(),
+  }
+}
+
+const persistProjectList = (projects: ProjectItem[]) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(PROJECT_LIST_STORAGE_KEY, JSON.stringify(projects))
+}
+
+const hasLegacyProjectEvidence = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  if (window.localStorage.getItem(LEGACY_PROJECT_META_STORAGE_KEY)) {
+    return true
+  }
+
+  return LEGACY_DEFAULT_PROJECTS.some((project) => {
+    return (
+      window.localStorage.getItem(`${NEW_STORAGE_KEY_PREFIX}${project.id}`) !== null ||
+      window.localStorage.getItem(`${LEGACY_STORAGE_KEY_PREFIX}${project.id}`) !== null
+    )
+  })
+}
+
+const loadProjectList = (): ProjectItem[] => {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  const raw = window.localStorage.getItem(PROJECT_LIST_STORAGE_KEY)
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (!Array.isArray(parsed)) {
+        return []
+      }
+
+      const deduped = new Set<string>()
+      const projects: ProjectItem[] = []
+
+      for (const item of parsed) {
+        if (!isProjectItem(item)) {
+          continue
+        }
+
+        const sanitized = sanitizeProjectItem(item)
+        if (!sanitized || deduped.has(sanitized.id)) {
+          continue
+        }
+
+        deduped.add(sanitized.id)
+        projects.push(sanitized)
+      }
+
+      return projects
+    } catch {
+      return []
+    }
+  }
+
+  if (!hasLegacyProjectEvidence()) {
+    return []
+  }
+
+  const migrated: ProjectItem[] = LEGACY_DEFAULT_PROJECTS.map((project) => ({
+    id: project.id,
+    name: project.name,
+    summary: project.summary,
+    status: project.status,
+  }))
+
+  const rawLegacyMeta = window.localStorage.getItem(LEGACY_PROJECT_META_STORAGE_KEY)
+  if (rawLegacyMeta) {
+    try {
+      const parsed = JSON.parse(rawLegacyMeta) as Partial<Record<(typeof LEGACY_DEFAULT_PROJECTS)[number]['id'], Partial<ProjectItem>>>
+
+      for (const project of migrated) {
+        const incoming = parsed[project.id as (typeof LEGACY_DEFAULT_PROJECTS)[number]['id']]
+        if (!incoming) {
+          continue
+        }
+
+        const merged: ProjectItem = {
+          id: project.id,
+          name: typeof incoming.name === 'string' ? incoming.name : project.name,
+          summary: typeof incoming.summary === 'string' ? incoming.summary : project.summary,
+          status: typeof incoming.status === 'string' ? incoming.status : project.status,
+        }
+
+        const sanitized = sanitizeProjectItem(merged)
+        if (sanitized) {
+          project.name = sanitized.name
+          project.summary = sanitized.summary
+          project.status = sanitized.status
+        }
+      }
+    } catch {
+      // Ignore malformed legacy data and keep legacy defaults.
+    }
+  }
+
+  persistProjectList(migrated)
+  return migrated
+}
+
+type InitialProjectData = {
+  projects: ProjectItem[]
+  boards: Record<ProjectId, Ow64Board>
+  selectedProjectId: ProjectId | null
+}
+
+const loadInitialProjectData = (): InitialProjectData => {
+  const projects = loadProjectList()
+  const boards = projects.reduce(
+    (acc, project) => {
+      acc[project.id] = loadOw64Board(project.id)
+      return acc
+    },
+    {} as Record<ProjectId, Ow64Board>,
+  )
+
+  return {
+    projects,
+    boards,
+    selectedProjectId: projects[0]?.id ?? null,
+  }
+}
+
+const INITIAL_PROJECT_DATA = loadInitialProjectData()
 
 const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
   if (!left) {
@@ -742,15 +847,6 @@ const toMarkerPath = (path: DrillPath): string => {
   return segments.join('>')
 }
 
-const escapeCsvValue = (value: string): string => {
-  const normalized = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  if (!/[",\n]/.test(normalized)) {
-    return normalized
-  }
-
-  return `"${normalized.replace(/"/g, '""')}"`
-}
-
 const buildOw64CsvRows = (board: Ow64Board): CsvRow[] => {
   const rows: CsvRow[] = []
 
@@ -804,18 +900,6 @@ const buildOw64CsvRows = (board: Ow64Board): CsvRow[] => {
   }
 
   return rows
-}
-
-const buildOw64CsvContent = (projectId: ProjectId, projectName: string, board: Ow64Board): string => {
-  const header = ['projectId', 'projectName', 'rowType', 'marker', 'path', 'title', 'subtitle']
-  const rows = buildOw64CsvRows(board)
-  const lines = rows.map((row) => {
-    return [projectId, projectName, row.rowType, row.marker, row.path, row.title, row.subtitle]
-      .map(escapeCsvValue)
-      .join(',')
-  })
-
-  return [header.join(','), ...lines].join('\n')
 }
 
 const getPathDepth = (path: string): number => path.split('>').length
@@ -1076,20 +1160,21 @@ const sanitizeFileName = (value: string): string => {
   return cleaned || 'project'
 }
 
+const createProjectId = (): ProjectId => {
+  const base = `project-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return base
+}
+
 function App() {
   const [view, setView] = useState<ViewMode>('home')
-  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId>('atlas')
+  const [projects, setProjects] = useState<ProjectItem[]>(() => INITIAL_PROJECT_DATA.projects)
+  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | null>(() => INITIAL_PROJECT_DATA.selectedProjectId)
   const [activeTab, setActiveTab] = useState<ProjectTabId>('mandala')
   const [activeLayer, setActiveLayer] = useState<MandalaLayer>('root')
   const [drillPath, setDrillPath] = useState<DrillPath | null>(null)
-  const [projectMetaById, setProjectMetaById] = useState<Record<ProjectId, ProjectMeta>>(() => loadProjectMetaById())
-  const [boardByProject, setBoardByProject] = useState<Record<ProjectId, Ow64Board>>(() => {
-    return DEFAULT_PROJECTS.reduce((acc, project) => {
-      acc[project.id] = loadOw64Board(project.id)
-      return acc
-    }, {} as Record<ProjectId, Ow64Board>)
-  })
+  const [boardByProject, setBoardByProject] = useState<Record<ProjectId, Ow64Board>>(() => INITIAL_PROJECT_DATA.boards)
   const [projectEditingId, setProjectEditingId] = useState<ProjectId | null>(null)
+  const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [projectDraftName, setProjectDraftName] = useState('')
   const [projectDraftSummary, setProjectDraftSummary] = useState('')
   const [projectDraftStatus, setProjectDraftStatus] = useState<string>(PROJECT_STATUS_OPTIONS[0])
@@ -1100,24 +1185,14 @@ function App() {
   const [markdownImportFeedback, setMarkdownImportFeedback] = useState('')
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const projects = useMemo(
-    () =>
-      DEFAULT_PROJECTS.map((project) => ({
-        id: project.id,
-        ...projectMetaById[project.id],
-      })),
-    [projectMetaById],
-  )
-
   const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId),
+    () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
     [projects, selectedProjectId],
   )
 
-  const currentBoard = boardByProject[selectedProjectId]
+  const currentBoard = selectedProjectId ? boardByProject[selectedProjectId] ?? createDefaultOw64Board() : createDefaultOw64Board()
   const isProjectDetailView = view === 'projectDetail'
-  const isProjectEditing = projectEditingId !== null
-  const isProjectMandalaView = isProjectDetailView && activeTab === 'mandala'
+  const isProjectMandalaView = isProjectDetailView && activeTab === 'mandala' && Boolean(selectedProject)
   const activeTabInfo = PROJECT_TABS.find((tab) => tab.id === activeTab)
   const activeDrillPath = drillPath ?? ([PILLAR_CELLS[0].id] as DrillPath)
   const activeDrillPillarId = activeDrillPath[0]
@@ -1137,6 +1212,7 @@ function App() {
 
   const resetProjectDraft = () => {
     setProjectEditingId(null)
+    setIsCreatingProject(false)
     setProjectDraftName('')
     setProjectDraftSummary('')
     setProjectDraftStatus(PROJECT_STATUS_OPTIONS[0])
@@ -1178,16 +1254,26 @@ function App() {
   }
 
   const handleProjectEditStart = (projectId: ProjectId) => {
-    const projectMeta = projectMetaById[projectId]
-    if (!projectMeta) {
+    const targetProject = projects.find((project) => project.id === projectId)
+    if (!targetProject) {
       return
     }
 
     setProjectEditingId(projectId)
-    setProjectDraftName(projectMeta.name)
-    setProjectDraftSummary(projectMeta.summary)
-    setProjectDraftStatus(projectMeta.status)
+    setIsCreatingProject(false)
+    setProjectDraftName(targetProject.name)
+    setProjectDraftSummary(targetProject.summary)
+    setProjectDraftStatus(targetProject.status)
     setShowProjectInfo(true)
+  }
+
+  const handleProjectCreateStart = () => {
+    resetEditingDraft()
+    setProjectEditingId(null)
+    setIsCreatingProject(true)
+    setProjectDraftName('')
+    setProjectDraftSummary('')
+    setProjectDraftStatus(PROJECT_STATUS_OPTIONS[0])
   }
 
   const handleProjectEditCancel = () => {
@@ -1195,52 +1281,88 @@ function App() {
   }
 
   const handleProjectEditSave = () => {
-    if (!projectEditingId) {
-      return
-    }
-
     const trimmedName = projectDraftName.trim()
     if (!trimmedName) {
       return
     }
 
-    const nextMeta: ProjectMeta = {
-      name: trimmedName,
-      summary: projectDraftSummary.trim(),
-      status: projectDraftStatus.trim(),
+    if (isCreatingProject) {
+      const newProjectId = createProjectId()
+      const nextProject: ProjectItem = {
+        id: newProjectId,
+        name: trimmedName,
+        summary: projectDraftSummary.trim(),
+        status: projectDraftStatus.trim(),
+      }
+
+      const nextProjects = [...projects, nextProject]
+      setProjects(nextProjects)
+      persistProjectList(nextProjects)
+
+      const initialBoard = createDefaultOw64Board()
+      setBoardByProject((prev) => ({
+        ...prev,
+        [newProjectId]: initialBoard,
+      }))
+      persistOw64Board(newProjectId, initialBoard)
+      setSelectedProjectId(newProjectId)
+
+      handleProjectEditCancel()
+      return
     }
 
-    setProjectMetaById((prev) => {
-      const next = {
-        ...prev,
-        [projectEditingId]: nextMeta,
+    if (!projectEditingId) {
+      return
+    }
+
+    const nextProjects = projects.map((project) => {
+      if (project.id !== projectEditingId) {
+        return project
       }
-      persistProjectMetaById(next)
-      return next
+
+      return {
+        ...project,
+        name: trimmedName,
+        summary: projectDraftSummary.trim(),
+        status: projectDraftStatus.trim(),
+      }
     })
+
+    setProjects(nextProjects)
+    persistProjectList(nextProjects)
 
     handleProjectEditCancel()
   }
 
-  const handleProjectEditReset = () => {
-    const targetProjectId = projectEditingId ?? selectedProjectId
-    const defaultMeta = DEFAULT_PROJECT_META_BY_ID[targetProjectId]
+  const handleProjectDelete = (projectId: ProjectId) => {
+    const nextProjects = projects.filter((project) => project.id !== projectId)
+    setProjects(nextProjects)
+    persistProjectList(nextProjects)
 
-    setProjectMetaById((prev) => {
-      const next = {
-        ...prev,
-        [targetProjectId]: {
-          ...defaultMeta,
-        },
+    setBoardByProject((prev) => {
+      if (!(projectId in prev)) {
+        return prev
       }
-      persistProjectMetaById(next)
+
+      const next = { ...prev }
+      delete next[projectId]
       return next
     })
+    removeOw64Board(projectId)
 
-    if (isProjectEditing) {
-      setProjectDraftName(defaultMeta.name)
-      setProjectDraftSummary(defaultMeta.summary)
-      setProjectDraftStatus(defaultMeta.status)
+    if (projectEditingId === projectId) {
+      resetProjectDraft()
+    }
+
+    if (selectedProjectId === projectId) {
+      resetEditingDraft()
+      resetMandalaLayer()
+      setShowProjectInfo(false)
+      const nextSelected = nextProjects[0]?.id ?? null
+      setSelectedProjectId(nextSelected)
+      if (!nextSelected) {
+        setView('projects')
+      }
     }
   }
 
@@ -1256,7 +1378,7 @@ function App() {
   }
 
   const handleSaveEdit = () => {
-    if (!editingTarget) {
+    if (!editingTarget || !selectedProjectId) {
       return
     }
 
@@ -1271,7 +1393,12 @@ function App() {
     }
 
     setBoardByProject((prev) => {
-      const updatedBoard = setContentByTarget(prev[selectedProjectId], editingTarget, nextContent)
+      const sourceBoard = prev[selectedProjectId]
+      if (!sourceBoard) {
+        return prev
+      }
+
+      const updatedBoard = setContentByTarget(sourceBoard, editingTarget, nextContent)
       const next = {
         ...prev,
         [selectedProjectId]: updatedBoard,
@@ -1285,10 +1412,19 @@ function App() {
   }
 
   const handleResetTarget = (target: EditingTarget) => {
+    if (!selectedProjectId) {
+      return
+    }
+
     const defaultContent = getDefaultContentByTarget(target, currentBoard)
 
     setBoardByProject((prev) => {
-      const updatedBoard = setContentByTarget(prev[selectedProjectId], target, defaultContent)
+      const sourceBoard = prev[selectedProjectId]
+      if (!sourceBoard) {
+        return prev
+      }
+
+      const updatedBoard = setContentByTarget(sourceBoard, target, defaultContent)
       const next = {
         ...prev,
         [selectedProjectId]: updatedBoard,
@@ -1310,12 +1446,21 @@ function App() {
   }
 
   const handleDrillDeeper = (actionId: ActionId) => {
+    if (!selectedProjectId) {
+      return
+    }
+
     resetEditingDraft()
     const nextPath = [...activeDrillPath, actionId] as DrillPath
 
     setBoardByProject((prev) => {
-      const ensuredBoard = ensurePathExists(prev[selectedProjectId], nextPath)
-      if (ensuredBoard === prev[selectedProjectId]) {
+      const sourceBoard = prev[selectedProjectId]
+      if (!sourceBoard) {
+        return prev
+      }
+
+      const ensuredBoard = ensurePathExists(sourceBoard, nextPath)
+      if (ensuredBoard === sourceBoard) {
         return prev
       }
 
@@ -1363,19 +1508,11 @@ function App() {
     resetMandalaLayer()
   }
 
-  const handleExportCsv = () => {
-    const projectName = selectedProject?.name ?? selectedProjectId
-    const csvContent = buildOw64CsvContent(selectedProjectId, projectName, currentBoard)
-    const blob = new Blob(['\uFEFF', csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ow64-${selectedProjectId}-${sanitizeFileName(projectName)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   const handleExportMarkdown = () => {
+    if (!selectedProjectId) {
+      return
+    }
+
     const projectName = selectedProject?.name ?? selectedProjectId
     const markdownContent = buildOw64MarkdownContent(selectedProjectId, projectName, currentBoard)
     const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8;' })
@@ -1392,6 +1529,10 @@ function App() {
   }
 
   const handleImportMarkdownFile = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!selectedProjectId) {
+      return
+    }
+
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) {
@@ -1457,19 +1598,24 @@ function App() {
             </div>
           </nav>
 
-          {isProjectDetailView && (
+          {isProjectDetailView && selectedProject && (
             <>
               <section className="sidebar-section" aria-label="Project context">
                 <p className="nav-title">Project Workspace</p>
-                <h2 className="sidebar-project-title">{selectedProject?.name}</h2>
-                <p className="sidebar-project-status">{selectedProject?.status}</p>
+                <h2 className="sidebar-project-title">{selectedProject.name}</h2>
+                <p className="sidebar-project-status">{selectedProject.status}</p>
                 <div className="sidebar-actions">
                   <button type="button" className="ghost-button" onClick={handleBackToProjects}>
                     返回项目管理
                   </button>
                   {projectEditingId !== selectedProjectId && (
-                    <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(selectedProjectId)}>
+                    <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(selectedProject.id)}>
                       编辑项目信息
+                    </button>
+                  )}
+                  {projectEditingId !== selectedProjectId && (
+                    <button type="button" className="ghost-button" onClick={() => handleProjectDelete(selectedProject.id)}>
+                      删除项目
                     </button>
                   )}
                   {projectEditingId !== selectedProjectId && (
@@ -1500,7 +1646,7 @@ function App() {
                 </section>
 
                 {showProjectInfo && projectEditingId !== selectedProjectId && (
-                  <p className="focus-summary project-summary-text">{selectedProject?.summary}</p>
+                  <p className="focus-summary project-summary-text">{selectedProject.summary}</p>
                 )}
 
                 {projectEditingId === selectedProjectId && (
@@ -1556,8 +1702,8 @@ function App() {
                       <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
                         取消
                       </button>
-                      <button type="button" className="mandala-action is-muted" onClick={handleProjectEditReset}>
-                        恢复默认
+                      <button type="button" className="mandala-action is-muted" onClick={() => handleProjectDelete(selectedProject.id)}>
+                        删除项目
                       </button>
                     </div>
                   </div>
@@ -1608,9 +1754,6 @@ function App() {
                         返回 OW9 主盘
                       </button>
                     )}
-                    <button type="button" className="ghost-button" onClick={handleExportCsv}>
-                      导出 CSV
-                    </button>
                     <button type="button" className="ghost-button" onClick={handleExportMarkdown}>
                       导出 Markdown
                     </button>
@@ -1670,17 +1813,90 @@ function App() {
                 <p className="content-eyebrow">Projects</p>
                 <h1 className="content-title">项目管理</h1>
                 <p className="content-desc">浏览项目列表，进入详情空间。</p>
+                <div className="detail-actions">
+                  <button type="button" className="ghost-button" onClick={handleProjectCreateStart}>
+                    新建项目
+                  </button>
+                </div>
               </section>
               <section className="content-panel projects-panel">
+                {isCreatingProject && (
+                  <article className="panel-card project-card project-card-create">
+                    <div>
+                      <p className="project-status">New project</p>
+                      <h2 className="panel-title">创建新项目</h2>
+                      <p className="panel-desc project-summary-text">填写项目信息后保存，即可进入项目空间。</p>
+                    </div>
+                    <div className="project-editor project-editor-inline" role="group" aria-label="创建项目">
+                      <label className="project-field" htmlFor="project-name-create">
+                        <span>项目名称</span>
+                        <input
+                          id="project-name-create"
+                          className="project-input"
+                          value={projectDraftName}
+                          onChange={(event) => setProjectDraftName(event.target.value)}
+                          placeholder="输入项目名称"
+                        />
+                      </label>
+                      <label className="project-field" htmlFor="project-summary-create">
+                        <span>项目简介</span>
+                        <textarea
+                          id="project-summary-create"
+                          className="project-input project-textarea"
+                          value={projectDraftSummary}
+                          onChange={(event) => setProjectDraftSummary(event.target.value)}
+                          placeholder="输入项目简介"
+                          rows={3}
+                        />
+                      </label>
+                      <label className="project-field" htmlFor="project-status-create">
+                        <span>项目状态</span>
+                        <select
+                          id="project-status-create"
+                          className="project-input"
+                          value={projectDraftStatus}
+                          onChange={(event) => setProjectDraftStatus(event.target.value)}
+                        >
+                          {PROJECT_STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="project-actions">
+                        <button
+                          type="button"
+                          className="mandala-action"
+                          onClick={handleProjectEditSave}
+                          disabled={!projectDraftName.trim()}
+                        >
+                          保存
+                        </button>
+                        <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                )}
+
+                {!isCreatingProject && projects.length === 0 && (
+                  <article className="panel-card project-empty-state">
+                    <h2 className="panel-title">暂无项目</h2>
+                    <p className="panel-desc">点击“新建项目”开始创建你的第一个项目。</p>
+                  </article>
+                )}
+
                 {projects.map((project) => (
                   <article key={project.id} className="panel-card project-card">
-                    <div>
+                    <div className="project-card-body">
                       <p className="project-status">{project.status}</p>
                       <h2 className="panel-title">{project.name}</h2>
                       <p className="panel-desc project-summary-text">{project.summary}</p>
                     </div>
 
-                    {projectEditingId === project.id ? (
+                    {projectEditingId === project.id && !isCreatingProject ? (
                       <div className="project-editor project-editor-inline" role="group" aria-label="编辑项目信息">
                         <label className="project-field" htmlFor={`project-name-${project.id}`}>
                           <span>项目名称</span>
@@ -1733,18 +1949,56 @@ function App() {
                           <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
                             取消
                           </button>
-                          <button type="button" className="mandala-action is-muted" onClick={handleProjectEditReset}>
-                            恢复默认
+                          <button type="button" className="mandala-action is-muted" onClick={() => handleProjectDelete(project.id)}>
+                            删除项目
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="project-card-actions">
-                        <button type="button" className="ghost-button" onClick={() => handleProjectEnter(project.id)}>
-                          进入项目
+                      <div className="project-card-tools" aria-label="项目快捷操作">
+                        <button
+                          type="button"
+                          className="project-tool-button"
+                          onClick={() => handleProjectEnter(project.id)}
+                          title="进入项目"
+                          aria-label={`进入项目 ${project.name}`}
+                        >
+                          <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                            <path d="M8 5L16 12L8 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
                         </button>
-                        <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(project.id)}>
-                          编辑信息
+                        <button
+                          type="button"
+                          className="project-tool-button"
+                          onClick={() => handleProjectEditStart(project.id)}
+                          title="编辑信息"
+                          aria-label={`编辑项目 ${project.name}`}
+                        >
+                          <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M4 20H8L18.5 9.5C19.3 8.7 19.3 7.3 18.5 6.5L17.5 5.5C16.7 4.7 15.3 4.7 14.5 5.5L4 16V20Z"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="project-tool-button is-danger"
+                          onClick={() => handleProjectDelete(project.id)}
+                          title="删除项目"
+                          aria-label={`删除项目 ${project.name}`}
+                        >
+                          <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                            <path d="M5 7H19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            <path d="M9 7V5H15V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M8 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            <path d="M12 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            <path d="M16 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            <path d="M7 7L8 20H16L17 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
                         </button>
                       </div>
                     )}
@@ -1754,7 +2008,7 @@ function App() {
             </>
           )}
 
-          {view === 'projectDetail' && (
+          {view === 'projectDetail' && selectedProjectId && selectedProject && (
             <>
               {activeTab === 'mandala' ? (
                 <section className="mandala-layout focus-content" aria-label="曼德拉九宫格 OW64">

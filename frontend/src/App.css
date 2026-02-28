@@ -266,10 +266,20 @@
 }
 
 .project-card {
+  position: relative;
   align-items: flex-start;
   text-align: left;
   cursor: default;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.project-card-body {
+  width: 100%;
+  padding-right: 7.2rem;
+}
+
+.project-card-create {
+  border-style: dashed;
 }
 
 .project-card:hover {
@@ -291,11 +301,49 @@
   color: #1b4332;
 }
 
-.project-card-actions {
-  margin-top: 1.25rem;
+.project-card-tools {
+  position: absolute;
+  top: 1.2rem;
+  right: 1.2rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.project-tool-button {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.project-tool-button:hover,
+.project-tool-button:focus-visible {
+  border-color: #1b4332;
+  color: #1b4332;
+  background: #fffdf8;
+}
+
+.project-tool-button.is-danger:hover,
+.project-tool-button.is-danger:focus-visible {
+  border-color: #b42318;
+  color: #b42318;
+}
+
+.project-tool-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.project-empty-state {
+  min-height: 140px;
 }
 
 .ghost-button {
@@ -774,6 +822,15 @@
 
   .detail-actions {
     width: 100%;
+  }
+
+  .project-card-body {
+    padding-right: 6.6rem;
+  }
+
+  .project-card-tools {
+    top: 1rem;
+    right: 1rem;
   }
 
   .tab-bar {
