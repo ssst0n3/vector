@@ -161,6 +161,21 @@ type Ow64Board = {
   drills: Record<PillarId, DrillNode>
 }
 
+type CsvRow = {
+  rowType: 'root-core' | 'root-pillar' | 'drill-core' | 'drill-action'
+  marker: string
+  path: string
+  title: string
+  subtitle: string
+}
+
+const ROW_TYPE_LABEL: Record<CsvRow['rowType'], string> = {
+  'root-core': 'Root Core',
+  'root-pillar': 'Root Pillar',
+  'drill-core': 'Drill Core',
+  'drill-action': 'Drill Action',
+}
+
 type EditingTarget =
   | { scope: 'core' }
   | { scope: 'pillar'; pillarId: PillarId }
@@ -704,6 +719,152 @@ const getDefaultContentByTarget = (target: EditingTarget, board: Ow64Board): Cel
   return getContentByTarget(defaults, target)
 }
 
+const toMarkerPath = (path: DrillPath): string => {
+  const [pillarId, ...actionPath] = path
+  const segments = [PILLAR_META[pillarId].marker, ...actionPath.map((actionId) => ACTION_META[actionId].marker)]
+  return segments.join('>')
+}
+
+const escapeCsvValue = (value: string): string => {
+  const normalized = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  if (!/[",\n]/.test(normalized)) {
+    return normalized
+  }
+
+  return `"${normalized.replace(/"/g, '""')}"`
+}
+
+const buildOw64CsvRows = (board: Ow64Board): CsvRow[] => {
+  const rows: CsvRow[] = []
+
+  rows.push({
+    rowType: 'root-core',
+    marker: 'O',
+    path: 'O',
+    title: board.core.title,
+    subtitle: board.core.subtitle,
+  })
+
+  for (const pillar of PILLAR_CELLS) {
+    rows.push({
+      rowType: 'root-pillar',
+      marker: pillar.marker,
+      path: pillar.marker,
+      title: board.pillars[pillar.id].title,
+      subtitle: board.pillars[pillar.id].subtitle,
+    })
+  }
+
+  const collectDrillRows = (node: DrillNode, path: DrillPath) => {
+    const markerPath = getMarkerByPath(path)
+    rows.push({
+      rowType: 'drill-core',
+      marker: markerPath,
+      path: toMarkerPath(path),
+      title: node.core.title,
+      subtitle: node.core.subtitle,
+    })
+
+    for (const action of ACTION_LAYOUT) {
+      const actionContent = node.actions[action.id]
+      rows.push({
+        rowType: 'drill-action',
+        marker: `${markerPath}-${action.marker}`,
+        path: `${toMarkerPath(path)}>${action.marker}`,
+        title: actionContent.title,
+        subtitle: actionContent.subtitle,
+      })
+
+      const child = node.children[action.id]
+      if (child) {
+        collectDrillRows(child, [...path, action.id] as DrillPath)
+      }
+    }
+  }
+
+  for (const pillar of PILLAR_CELLS) {
+    collectDrillRows(board.drills[pillar.id], [pillar.id] as DrillPath)
+  }
+
+  return rows
+}
+
+const buildOw64CsvContent = (projectId: ProjectId, projectName: string, board: Ow64Board): string => {
+  const header = ['projectId', 'projectName', 'rowType', 'marker', 'path', 'title', 'subtitle']
+  const rows = buildOw64CsvRows(board)
+  const lines = rows.map((row) => {
+    return [projectId, projectName, row.rowType, row.marker, row.path, row.title, row.subtitle]
+      .map(escapeCsvValue)
+      .join(',')
+  })
+
+  return [header.join(','), ...lines].join('\n')
+}
+
+const getPathDepth = (path: string): number => path.split('>').length
+
+const escapeMarkdownCell = (value: string): string => {
+  return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\|/g, '\\|').replace(/\n/g, '<br />')
+}
+
+const buildMarkdownTable = (rows: CsvRow[]): string => {
+  const header = '| Type | Marker | Path | Title | Subtitle |'
+  const separator = '| --- | --- | --- | --- | --- |'
+  const body = rows.map((row) => {
+    return `| ${ROW_TYPE_LABEL[row.rowType]} | ${escapeMarkdownCell(row.marker)} | ${escapeMarkdownCell(row.path)} | ${escapeMarkdownCell(row.title)} | ${escapeMarkdownCell(row.subtitle)} |`
+  })
+  return [header, separator, ...body].join('\n')
+}
+
+const buildOw64MarkdownContent = (projectId: ProjectId, projectName: string, board: Ow64Board): string => {
+  const rows = buildOw64CsvRows(board)
+  const rootRows = rows.filter((row) => row.rowType === 'root-core' || row.rowType === 'root-pillar')
+  const drillCoreRows = rows.filter((row) => row.rowType === 'drill-core')
+  const exportedAt = new Date().toISOString()
+
+  const sections: string[] = [
+    `# OW64 Export - ${projectName}`,
+    '',
+    `- Project ID: ${projectId}`,
+    `- Project Name: ${projectName}`,
+    `- Exported At: ${exportedAt}`,
+    '',
+    '## 主盘 (OW9)',
+    '',
+    buildMarkdownTable(rootRows),
+    '',
+    '## 下钻与行动项',
+    '',
+  ]
+
+  for (const coreRow of drillCoreRows) {
+    const coreDepth = getPathDepth(coreRow.path)
+    const actionRows = rows.filter((row) => {
+      if (row.rowType !== 'drill-action') {
+        return false
+      }
+
+      return row.path.startsWith(`${coreRow.path}>`) && getPathDepth(row.path) === coreDepth + 1
+    })
+
+    sections.push(`### ${coreRow.path} · ${coreRow.title}`)
+    sections.push('')
+    sections.push(buildMarkdownTable([coreRow, ...actionRows]))
+    sections.push('')
+  }
+
+  return sections.join('\n')
+}
+
+const sanitizeFileName = (value: string): string => {
+  const cleaned = value
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[\\/:*?"<>|]/g, '')
+
+  return cleaned || 'project'
+}
+
 function App() {
   const [view, setView] = useState<ViewMode>('home')
   const [selectedProjectId, setSelectedProjectId] = useState<ProjectId>('atlas')
@@ -721,6 +882,7 @@ function App() {
   const [projectDraftName, setProjectDraftName] = useState('')
   const [projectDraftSummary, setProjectDraftSummary] = useState('')
   const [projectDraftStatus, setProjectDraftStatus] = useState<string>(PROJECT_STATUS_OPTIONS[0])
+  const [showProjectInfo, setShowProjectInfo] = useState(false)
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
@@ -740,7 +902,9 @@ function App() {
   )
 
   const currentBoard = boardByProject[selectedProjectId]
+  const isProjectDetailView = view === 'projectDetail'
   const isProjectEditing = projectEditingId !== null
+  const isProjectMandalaView = isProjectDetailView && activeTab === 'mandala'
   const activeTabInfo = PROJECT_TABS.find((tab) => tab.id === activeTab)
   const activeDrillPath = drillPath ?? ([PILLAR_CELLS[0].id] as DrillPath)
   const activeDrillPillarId = activeDrillPath[0]
@@ -769,6 +933,7 @@ function App() {
     resetEditingDraft()
     resetMandalaLayer()
     resetProjectDraft()
+    setShowProjectInfo(false)
     setView(nextView)
   }
 
@@ -785,6 +950,7 @@ function App() {
     resetEditingDraft()
     resetMandalaLayer()
     resetProjectDraft()
+    setShowProjectInfo(false)
     setSelectedProjectId(projectId)
     setView('projectDetail')
     setActiveTab('mandala')
@@ -794,6 +960,7 @@ function App() {
     resetEditingDraft()
     resetMandalaLayer()
     resetProjectDraft()
+    setShowProjectInfo(false)
     setView('projects')
   }
 
@@ -807,6 +974,7 @@ function App() {
     setProjectDraftName(projectMeta.name)
     setProjectDraftSummary(projectMeta.summary)
     setProjectDraftStatus(projectMeta.status)
+    setShowProjectInfo(true)
   }
 
   const handleProjectEditCancel = () => {
@@ -982,50 +1150,78 @@ function App() {
     resetMandalaLayer()
   }
 
+  const handleExportCsv = () => {
+    const projectName = selectedProject?.name ?? selectedProjectId
+    const csvContent = buildOw64CsvContent(selectedProjectId, projectName, currentBoard)
+    const blob = new Blob(['\uFEFF', csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ow64-${selectedProjectId}-${sanitizeFileName(projectName)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportMarkdown = () => {
+    const projectName = selectedProject?.name ?? selectedProjectId
+    const markdownContent = buildOw64MarkdownContent(selectedProjectId, projectName, currentBoard)
+    const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ow64-${selectedProjectId}-${sanitizeFileName(projectName)}.md`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark">OW64</span>
-          <div className="brand-text">
-            <p className="brand-title">Project Layout</p>
-            <p className="brand-subtitle">Focus and execution workspace</p>
-          </div>
-        </div>
-        <div className="header-meta">
-          <p className="header-label">Workspace</p>
-          <p className="header-value">Layout v0.1</p>
-        </div>
-      </header>
-
-      <div className="app-body">
-        <aside className="app-sidebar">
-          <nav className="side-nav" aria-label="Primary">
-            <p className="nav-title">Navigation</p>
-            <div className="nav-items">
-              <button
-                type="button"
-                className={`nav-item ${view === 'home' ? 'is-active' : ''}`}
-                onClick={() => handleViewChange('home')}
-                aria-current={view === 'home' ? 'page' : undefined}
-              >
-                <span className="nav-label">首页</span>
-                <span className="nav-desc">项目与任务概览</span>
-              </button>
-              <button
-                type="button"
-                className={`nav-item ${view === 'projects' ? 'is-active' : ''}`}
-                onClick={() => handleViewChange('projects')}
-                aria-current={view === 'projects' ? 'page' : undefined}
-              >
-                <span className="nav-label">项目管理</span>
-                <span className="nav-desc">项目列表与管理入口</span>
-              </button>
+    <div className={`app ${isProjectDetailView ? 'is-focus-layout' : ''}`}>
+      {!isProjectDetailView && (
+        <header className="app-header">
+          <div className="brand">
+            <span className="brand-mark">OW64</span>
+            <div className="brand-text">
+              <p className="brand-title">Project Layout</p>
+              <p className="brand-subtitle">Focus and execution workspace</p>
             </div>
-          </nav>
-        </aside>
+          </div>
+          <div className="header-meta">
+            <p className="header-label">Workspace</p>
+            <p className="header-value">Layout v0.1</p>
+          </div>
+        </header>
+      )}
 
-        <main className="app-main">
+      <div className={`app-body ${isProjectDetailView ? 'is-focus-body' : ''}`}>
+        {!isProjectDetailView && (
+          <aside className="app-sidebar">
+            <nav className="side-nav" aria-label="Primary">
+              <p className="nav-title">Navigation</p>
+              <div className="nav-items">
+                <button
+                  type="button"
+                  className={`nav-item ${view === 'home' ? 'is-active' : ''}`}
+                  onClick={() => handleViewChange('home')}
+                  aria-current={view === 'home' ? 'page' : undefined}
+                >
+                  <span className="nav-label">首页</span>
+                  <span className="nav-desc">项目与任务概览</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-item ${view === 'projects' ? 'is-active' : ''}`}
+                  onClick={() => handleViewChange('projects')}
+                  aria-current={view === 'projects' ? 'page' : undefined}
+                >
+                  <span className="nav-label">项目管理</span>
+                  <span className="nav-desc">项目列表与管理入口</span>
+                </button>
+              </div>
+            </nav>
+          </aside>
+        )}
+
+        <main className={`app-main ${isProjectDetailView ? 'is-project-detail' : ''} ${isProjectMandalaView ? 'is-project-mandala' : ''}`}>
           {view === 'home' && (
             <>
               <section className="content-header">
@@ -1138,11 +1334,14 @@ function App() {
 
           {view === 'projectDetail' && (
             <>
-              <section className="content-header">
-                <p className="content-eyebrow">Project</p>
-                <div className="detail-title">
-                  <h1 className="content-title">{selectedProject?.name}</h1>
-                  <div className="detail-actions">
+              <section className="focus-topbar" aria-label="Project workspace header">
+                <div className="focus-topbar-main">
+                  <div className="focus-title-group">
+                    <p className="content-eyebrow">Project Workspace</p>
+                    <h1 className="focus-title">{selectedProject?.name}</h1>
+                    <p className="focus-status">{selectedProject?.status}</p>
+                  </div>
+                  <div className="focus-actions">
                     <button type="button" className="ghost-button" onClick={handleBackToProjects}>
                       返回项目管理
                     </button>
@@ -1151,11 +1350,40 @@ function App() {
                         编辑项目信息
                       </button>
                     )}
+                    {projectEditingId !== selectedProjectId && (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => setShowProjectInfo((prev) => !prev)}
+                        aria-expanded={showProjectInfo}
+                      >
+                        {showProjectInfo ? '收起项目信息' : '项目信息'}
+                      </button>
+                    )}
                   </div>
                 </div>
-                <p className="content-desc project-summary-text">{selectedProject?.summary}</p>
+
+                <section className="tab-bar focus-tab-bar" role="tablist" aria-label="Project tabs">
+                  {PROJECT_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      className={`tab-item ${activeTab === tab.id ? 'is-active' : ''}`}
+                      aria-selected={activeTab === tab.id}
+                      onClick={() => handleTabChange(tab.id)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </section>
+
+                {showProjectInfo && projectEditingId !== selectedProjectId && (
+                  <p className="focus-summary project-summary-text">{selectedProject?.summary}</p>
+                )}
+
                 {projectEditingId === selectedProjectId && (
-                  <div className="project-editor" role="group" aria-label="编辑项目信息">
+                  <div className="project-editor focus-project-editor" role="group" aria-label="编辑项目信息">
                     <label className="project-field" htmlFor="project-name">
                       <span>项目名称</span>
                       <input
@@ -1215,23 +1443,8 @@ function App() {
                 )}
               </section>
 
-              <section className="tab-bar" role="tablist" aria-label="Project tabs">
-                {PROJECT_TABS.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    className={`tab-item ${activeTab === tab.id ? 'is-active' : ''}`}
-                    aria-selected={activeTab === tab.id}
-                    onClick={() => handleTabChange(tab.id)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </section>
-
               {activeTab === 'mandala' ? (
-                <section className="mandala-layout" aria-label="曼德拉九宫格 OW64">
+                <section className="mandala-layout focus-content" aria-label="曼德拉九宫格 OW64">
                   <div className="mandala-toolbar">
                     <div className="mandala-layer-switch" role="tablist" aria-label="OW64 views">
                       <button
@@ -1263,27 +1476,36 @@ function App() {
                       </button>
                     </div>
 
-                    {activeLayer === 'pillar' ? (
-                      <div className="mandala-toolbar-meta">
-                        <div className="mandala-toolbar-actions">
-                          {activeDrillPath.length > 1 && (
-                            <button type="button" className="ghost-button" onClick={handleBackOneLevel}>
-                              返回上一级
-                            </button>
-                          )}
+                    <div className="mandala-toolbar-meta">
+                      <div className="mandala-toolbar-actions">
+                        {activeLayer === 'pillar' && activeDrillPath.length > 1 && (
+                          <button type="button" className="ghost-button" onClick={handleBackOneLevel}>
+                            返回上一级
+                          </button>
+                        )}
+                        {activeLayer === 'pillar' && (
                           <button type="button" className="ghost-button" onClick={handleBackToRoot}>
                             返回 OW9 主盘
                           </button>
-                        </div>
+                        )}
+                        <button type="button" className="ghost-button" onClick={handleExportCsv}>
+                          导出 CSV
+                        </button>
+                        <button type="button" className="ghost-button" onClick={handleExportMarkdown}>
+                          导出 Markdown
+                        </button>
+                      </div>
+
+                      {activeLayer === 'pillar' ? (
                         <p className="mandala-path">
                           OW64 / {getMarkerByPath(activeDrillPath)} / {activeDrillTitleSegments.join(' / ')}
                         </p>
-                      </div>
-                    ) : activeLayer === 'overview' ? (
-                      <p className="mandala-path">全景展示 8 个方向与各自 8 个行动点</p>
-                    ) : (
-                      <p className="mandala-path">点击 W1~W8 可进入对应行动九宫格</p>
-                    )}
+                      ) : activeLayer === 'overview' ? (
+                        <p className="mandala-path">全景展示 8 个方向与各自 8 个行动点</p>
+                      ) : (
+                        <p className="mandala-path">点击 W1~W8 可进入对应行动九宫格</p>
+                      )}
+                    </div>
                   </div>
 
                   {activeLayer === 'overview' ? (
@@ -1584,7 +1806,7 @@ function App() {
                   )}
                 </section>
               ) : (
-                <section className={`content-panel detail-panel ${activeTab}-panel`}>
+                <section className={`content-panel detail-panel ${activeTab}-panel focus-content`}>
                   <div className="panel-card">
                     <h2 className="panel-title">{activeTabInfo?.label}</h2>
                     <p className="panel-desc">{activeTabInfo?.description}</p>

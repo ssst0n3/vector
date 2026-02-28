@@ -1,150 +1,146 @@
 # AGENTS.md
+Guidance for agentic coding tools working in this repository.
 
-This file guides agentic coding tools working in this repository.
+## Repository Scope
+- Main app: `frontend/` (Vite + React + TypeScript).
+- Source code: `frontend/src/`.
+- Key configs: `frontend/package.json`, `frontend/vite.config.ts`, `frontend/eslint.config.js`, `frontend/tsconfig.json`, `frontend/tsconfig.app.json`, `frontend/tsconfig.node.json`.
 
-## Project Layout
-- Frontend lives in `frontend/` (Vite + React + TypeScript).
-- Source code is under `frontend/src/`.
-- Build config in `frontend/vite.config.ts`.
-- Lint rules in `frontend/eslint.config.js`.
-- TS configs in `frontend/tsconfig*.json`.
+## Cursor / Copilot Rule Files
+- Cursor rules: not found.
+- Checked paths: `.cursorrules`, `.cursor/rules/`.
+- Copilot rules: not found.
+- Checked path: `.github/copilot-instructions.md`.
+- If any of these files are added later, treat them as higher-priority rules and update this document.
 
-## Required Rules From Other Tools
-- Cursor rules: not found (no `.cursorrules` or `.cursor/rules/`).
-- Copilot rules: not found (no `.github/copilot-instructions.md`).
+## Build / Lint / Test Commands
+- Install deps: `cd frontend && npm install`.
+- Dev server: `cd frontend && npm run dev`.
+- Build: `cd frontend && npm run build`.
+- Build script currently runs: `tsc -b && vite build`.
+- Preview build: `cd frontend && npm run preview`.
+- Lint: `cd frontend && npm run lint`.
 
-## Quick Start
-All commands should be run from the repo root unless stated otherwise.
+## Test Status (Current)
+- There is no test runner configured right now.
+- `frontend/package.json` has no `test` script.
+- Minimum verification for changes: `cd frontend && npm run lint && npm run build`.
 
-### Install
-```bash
-cd frontend
-npm install
-```
+## Single-Test Command Guidance (When Tests Are Added)
+- Full suite (generic): `cd frontend && npm run test`.
+- Single test file (generic): `cd frontend && npm run test -- src/path/to/file.test.tsx`.
+- Test name filter (generic): `cd frontend && npm run test -- -t "test name"`.
+- Vitest single file: `cd frontend && npx vitest run src/path/to/file.test.tsx`.
+- Vitest name filter: `cd frontend && npx vitest -t "test name"`.
+- Jest single file: `cd frontend && npx jest src/path/to/file.test.tsx`.
+- Jest name filter: `cd frontend && npx jest -t "test name"`.
+- Keep these commands synchronized with actual tooling once a runner is introduced.
 
-### Dev Server
-```bash
-cd frontend
-npm run dev
-```
+## Code Style Guidelines
 
-### Production Build
-```bash
-cd frontend
-npm run build
-```
+### Language and Types
+- Use TypeScript for app code.
+- Assume strict typing; avoid `any`.
+- Prefer explicit return/value types where inference is unclear.
+- Prefer `unknown` + narrowing instead of broad casts.
+- Validate external or persisted data before use.
 
-### Preview Build
-```bash
-cd frontend
-npm run preview
-```
-
-### Lint
-```bash
-cd frontend
-npm run lint
-```
-
-### Tests
-There is no test script configured in `frontend/package.json`.
-If tests are added later, document:
-- The main test command
-- How to run a single test file
-- How to filter by test name
-
-## Running a Single Test (Placeholder)
-No test runner is configured. When adding one, prefer a command like:
-```bash
-cd frontend
-npm run test -- path/to/file.test.tsx
-```
-And a name filter like:
-```bash
-cd frontend
-npm run test -- -t "test name"
-```
-
-## Code Style and Conventions
-Follow existing code and tooling first. Do not introduce new style rules
-unless required by project changes.
-
-### Language and Tooling
-- TypeScript is required (`strict` enabled).
-- React with JSX (automatic runtime).
-- ESLint uses `@eslint/js`, `typescript-eslint`, `react-hooks`, and
-  `react-refresh` configs.
+### TS Compiler Constraints to Respect
+- `strict: true`
+- `noUnusedLocals: true`
+- `noUnusedParameters: true`
+- `noFallthroughCasesInSwitch: true`
+- `verbatimModuleSyntax: true`
+- `allowImportingTsExtensions: true`
+- `noUncheckedSideEffectImports: true`
+- `moduleResolution: "bundler"`
+- `noEmit: true`
 
 ### Imports
-- Use ES module syntax everywhere.
-- Keep imports at the top of the file.
-- Group imports in this order when possible:
+- Use ES modules only.
+- Keep imports at file top.
+- Use this order when practical:
   1) External packages
   2) Internal modules
   3) Relative modules
-  4) Stylesheets
-- Prefer type-only imports when a type is only used in types.
-- Do not use side-effect imports unless necessary (TS `noUncheckedSideEffectImports`).
+  4) Styles/assets
+- Use type-only imports for type-only symbols.
+- Avoid side-effect imports unless absolutely necessary.
 
 ### Formatting
-- Use the existing formatting style in the file.
-- Keep line widths reasonable (no enforced formatter configured).
-- Prefer trailing commas in multiline objects/arrays when it matches the file.
-
-### Types and TS Config Expectations
-- `strict: true` is enabled. Avoid `any`.
-- `noUnusedLocals` and `noUnusedParameters` are enabled.
-- `verbatimModuleSyntax` is enabled: keep type imports explicit.
-- `allowImportingTsExtensions` is enabled; follow current file style.
+- Follow existing formatting style in each touched file.
+- No enforced formatter exists; keep lines readable and consistent.
+- Keep edits small and task-focused.
+- Preserve local trailing comma style.
+- Do not perform unrelated formatting churn.
 
 ### Naming
-- React components: PascalCase (e.g., `MyWidget`).
-- Hooks: `useX` prefix and follow React Hooks rules.
-- Functions and variables: camelCase.
-- Files: follow existing component/file naming in `src/`.
-- CSS classes: follow existing `App.css` and `index.css` patterns.
+- Components: PascalCase.
+- Hooks: `useX` prefix.
+- Functions/variables: camelCase.
+- Constants: UPPER_SNAKE_CASE for real constants.
+- Types/interfaces/type aliases: PascalCase.
+- CSS class names: follow existing kebab-case patterns.
+- File names: follow nearby conventions in `frontend/src/`.
 
 ### React Conventions
-- Use function components.
+- Use function components and hooks.
 - Keep state updates immutable.
-- Use `useState`/`useEffect` according to hooks rules.
-- Avoid stale closures in hooks (depend on hooks linting).
+- Keep hook dependency arrays accurate.
+- Prefer early returns in handlers for invalid input/state.
+- Avoid unnecessary memoization.
+- Keep component logic readable; extract helpers when blocks become dense.
 
 ### Error Handling
-- Prefer early returns for invalid states.
-- Guard nullable DOM access (see `document.getElementById('root')!`).
-- For async code, handle errors with try/catch and surface a user-friendly
-  message if UI-facing.
+- Use `try/catch` around JSON parsing and localStorage operations.
+- Return safe defaults on recoverable failures.
+- Preserve current behavior when migrations or fallback paths exist.
+- Avoid swallowing errors silently when debugging context is needed.
 
 ### Accessibility
-- Provide `alt` text for images.
-- Prefer semantic HTML elements and attributes.
-- Ensure interactive elements are keyboard accessible.
+- Prefer semantic HTML elements.
+- Keep interactive controls keyboard accessible.
+- Preserve visible focus styles.
+- Use meaningful `aria-*` attributes where necessary.
+- Add `alt` text for informative images.
 
-### CSS and Assets
-- Keep CSS in `App.css` / `index.css` or co-located patterns that already exist.
-- Avoid global CSS changes unless the feature requires it.
+### CSS and UI Consistency
+- Reuse variables from `frontend/src/index.css`.
+- Keep styles in existing CSS files unless a new pattern is justified.
+- Avoid broad global CSS changes unless required.
+- Preserve responsive behavior at current breakpoints.
 
-## Repository Hygiene
-- Do not delete unrelated files.
-- Do not change configs unless needed for the task.
-- Keep dependencies minimal and justified.
-
-## Git Guidance for Agents
-- Never amend commits unless explicitly requested.
+## Git and Change Hygiene for Agents
 - Do not use destructive git commands.
-- Keep commits focused and follow semantic commit messages.
+- Do not amend commits unless explicitly requested.
+- Do not revert unrelated local changes.
+- Keep commits focused and semantic.
 
-## Common Pitfalls
-- Forgetting to run lint before finalizing changes.
-- Adding unused imports or unused vars (will fail lint/tsc).
-- Introducing side-effect imports without necessity.
+## Agent Workflow Expectations
+- Read relevant files before editing.
+- Prefer small, reversible changes over broad rewrites.
+- If requirement conflicts exist, prioritize explicit user instructions.
+- If uncertain, choose the least risky implementation aligned with existing patterns.
+- Validate changed paths with lint/build checks before completion.
+- Keep explanations concise and include impacted file paths.
+- Avoid introducing new tools/frameworks without clear need.
+- Preserve existing behavior unless the task explicitly requests behavior changes.
+
+## Pre-Completion Checklist
+- Run `cd frontend && npm run lint`.
+- Run `cd frontend && npm run build`.
+- Remove unused imports, locals, and parameters.
+- Verify no accidental config changes were introduced.
+- Document known limitations (especially missing tests).
 
 ## References
 - `frontend/package.json`
 - `frontend/eslint.config.js`
+- `frontend/tsconfig.json`
 - `frontend/tsconfig.app.json`
 - `frontend/tsconfig.node.json`
 - `frontend/vite.config.ts`
 - `frontend/src/main.tsx`
 - `frontend/src/App.tsx`
+- `frontend/src/App.css`
+- `frontend/src/index.css`
