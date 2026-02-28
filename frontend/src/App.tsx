@@ -182,6 +182,7 @@ type EditingTarget =
   | { scope: 'core' }
   | { scope: 'pillar'; pillarId: PillarId }
   | { scope: 'drillCore'; path: DrillPath }
+  | { scope: 'drillAction'; path: DrillPath; actionId: ActionId }
 
 const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
@@ -669,6 +670,10 @@ const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
     return isSamePath(left.path, right.path)
   }
 
+  if (left.scope === 'drillAction' && right.scope === 'drillAction') {
+    return isSamePath(left.path, right.path) && left.actionId === right.actionId
+  }
+
   return false
 }
 
@@ -743,6 +748,10 @@ const getContentByTarget = (board: Ow64Board, target: EditingTarget): CellConten
     return board.pillars[target.pillarId]
   }
 
+  if (target.scope === 'drillAction') {
+    return getNodeByPath(board, target.path).actions[target.actionId]
+  }
+
   return getNodeByPath(board, target.path).core
 }
 
@@ -771,6 +780,10 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
         },
       },
     }
+  }
+
+  if (target.scope === 'drillAction') {
+    return setActionContentByPath(board, target.path, target.actionId, content)
   }
 
   const [rawPillarId, ...actionPath] = target.path
@@ -830,6 +843,12 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
 }
 
 const getDefaultContentByTarget = (target: EditingTarget, board: Ow64Board): CellContent => {
+  if (target.scope === 'drillAction') {
+    const currentNode = getNodeByPath(board, target.path)
+    const seedMarker = target.path.length === 1 ? PILLAR_META[target.path[0]].marker : currentNode.core.title
+    return createDrillNode(currentNode.core, seedMarker).actions[target.actionId]
+  }
+
   if (target.scope === 'drillCore' && target.path.length > 1) {
     const parentPath = [target.path[0], ...target.path.slice(1, -1)] as DrillPath
     const parentNode = getNodeByPath(board, parentPath)
@@ -2326,20 +2345,103 @@ function App() {
 
                           const marker = ACTION_META[gridItem.actionId].marker
                           const content = activeDrillNode.actions[gridItem.actionId]
+                          const actionTarget: EditingTarget = {
+                            scope: 'drillAction',
+                            path: activeDrillPath,
+                            actionId: gridItem.actionId,
+                          }
+                          const editing = isSameTarget(editingTarget, actionTarget)
+
+                          if (editing) {
+                            const inputIdSuffix = `${activeDrillPath.join('-')}-${gridItem.actionId}`
+
+                            return (
+                              <div key={inputIdSuffix} className="mandala-cell mandala-editor">
+                                <span className="mandala-marker">{marker}</span>
+                                <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
+                                  <span>目标</span>
+                                  <input
+                                    id={`title-${inputIdSuffix}`}
+                                    value={draftTitle}
+                                    onChange={(event) => setDraftTitle(event.target.value)}
+                                    className="mandala-input"
+                                    placeholder="输入目标"
+                                  />
+                                </label>
+                                <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
+                                  <span>说明</span>
+                                  <textarea
+                                    id={`subtitle-${inputIdSuffix}`}
+                                    value={draftSubtitle}
+                                    onChange={(event) => setDraftSubtitle(event.target.value)}
+                                    className="mandala-input mandala-textarea"
+                                    placeholder="输入说明"
+                                    rows={3}
+                                  />
+                                </label>
+                                <div className="mandala-actions">
+                                  <button type="button" className="mandala-action" onClick={handleSaveEdit} disabled={!draftTitle.trim()}>
+                                    保存
+                                  </button>
+                                  <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
+                                    取消
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-action is-muted"
+                                    onClick={() => handleResetTarget(actionTarget)}
+                                  >
+                                    恢复默认
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          }
 
                           return (
-                            <button
+                            <article
                               key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
-                              type="button"
                               className="mandala-cell"
-                              onClick={() => handleDrillDeeper(gridItem.actionId)}
                               aria-label={`${marker} ${content.title}`}
                             >
                               <span className="mandala-marker">{marker}</span>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
-                              <p className="mandala-hint">点击继续下钻</p>
-                            </button>
+                              <div className="mandala-cell-actions">
+                                <button
+                                  type="button"
+                                  className="mandala-cell-action is-icon"
+                                  onClick={() => handleStartEdit(actionTarget)}
+                                  title="编辑"
+                                  aria-label={`编辑 ${marker} ${content.title}`}
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    className="mandala-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                  >
+                                    <path
+                                      d="M4 20H8L18.5 9.5C19.3 8.7 19.3 7.3 18.5 6.5L17.5 5.5C16.7 4.7 15.3 4.7 14.5 5.5L4 16V20Z"
+                                      stroke="currentColor"
+                                      strokeWidth="1.8"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="mandala-cell-action is-primary is-icon"
+                                  onClick={() => handleDrillDeeper(gridItem.actionId)}
+                                  title="继续下钻"
+                                  aria-label={`继续下钻 ${marker} ${content.title}`}
+                                >
+                                  <span aria-hidden="true">⤢</span>
+                                </button>
+                              </div>
+                            </article>
                           )
                         })}
                     </div>
