@@ -1166,7 +1166,7 @@ const createProjectId = (): ProjectId => {
 }
 
 function App() {
-  const [view, setView] = useState<ViewMode>('home')
+  const [view, setView] = useState<ViewMode>('projects')
   const [projects, setProjects] = useState<ProjectItem[]>(() => INITIAL_PROJECT_DATA.projects)
   const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | null>(() => INITIAL_PROJECT_DATA.selectedProjectId)
   const [activeTab, setActiveTab] = useState<ProjectTabId>('mandala')
