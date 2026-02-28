@@ -163,6 +163,8 @@ type Ow64Board = {
   core: CellContent
   pillars: Record<PillarId, CellContent>
   drills: Record<PillarId, DrillNode>
+  visibleCore: boolean
+  visiblePillars: Record<PillarId, boolean>
 }
 
 type CsvRow = {
@@ -265,6 +267,13 @@ const createActionVisibilityMap = (visible: boolean): Record<ActionId, boolean> 
   }, {} as Record<ActionId, boolean>)
 }
 
+const createPillarVisibilityMap = (visible: boolean): Record<PillarId, boolean> => {
+  return PILLAR_CELLS.reduce((acc, cell) => {
+    acc[cell.id] = visible
+    return acc
+  }, {} as Record<PillarId, boolean>)
+}
+
 const createDrillNode = (
   seed: CellContent,
   seedMarker: string,
@@ -320,6 +329,8 @@ const createDefaultOw64Board = (): Ow64Board => {
     core,
     pillars,
     drills,
+    visibleCore: true,
+    visiblePillars: createPillarVisibilityMap(true),
   }
 }
 
@@ -342,6 +353,17 @@ const mergeBoardWithDefault = (incoming: unknown): Ow64Board => {
 
   if (isCellContent(parsed.core)) {
     defaults.core = parsed.core
+  }
+
+  if (typeof parsed.visibleCore === 'boolean') {
+    defaults.visibleCore = parsed.visibleCore
+  }
+
+  for (const pillar of PILLAR_CELLS) {
+    const pillarVisible = parsed.visiblePillars?.[pillar.id]
+    if (typeof pillarVisible === 'boolean') {
+      defaults.visiblePillars[pillar.id] = pillarVisible
+    }
   }
 
   const mergeNode = (base: DrillNode, candidate: unknown): DrillNode => {
@@ -813,6 +835,7 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
     return {
       ...board,
       core: content,
+      visibleCore: true,
     }
   }
 
@@ -824,6 +847,10 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
       pillars: {
         ...board.pillars,
         [pillarId]: content,
+      },
+      visiblePillars: {
+        ...board.visiblePillars,
+        [pillarId]: true,
       },
       drills: {
         ...board.drills,
@@ -1524,7 +1551,7 @@ function App() {
     setDraftSubtitle(content.subtitle)
   }
 
-  const handleStartAdd = (target: Extract<EditingTarget, { scope: 'drillCore' | 'drillAction' }>) => {
+  const handleStartAdd = (target: EditingTarget) => {
     setEditingTarget(target)
     setDraftTitle('')
     setDraftSubtitle('')
@@ -1630,15 +1657,26 @@ function App() {
       return
     }
 
-    const defaultContent = getDefaultContentByTarget(target, currentBoard)
-
     setBoardByProject((prev) => {
       const sourceBoard = prev[selectedProjectId]
       if (!sourceBoard) {
         return prev
       }
 
-      const updatedBoard = setContentByTarget(sourceBoard, target, defaultContent)
+      const updatedBoard: Ow64Board =
+        target.scope === 'core'
+          ? {
+              ...sourceBoard,
+              visibleCore: false,
+            }
+          : {
+              ...sourceBoard,
+              visiblePillars: {
+                ...sourceBoard.visiblePillars,
+                [target.pillarId]: false,
+              },
+            }
+
       const next = {
         ...prev,
         [selectedProjectId]: updatedBoard,
@@ -2308,6 +2346,7 @@ function App() {
                               ? { scope: 'core' }
                               : { scope: 'pillar', pillarId: cell.id as PillarId }
                           const content = getContentByTarget(currentBoard, target)
+                          const rootVisible = target.scope === 'core' ? true : currentBoard.visiblePillars[target.pillarId]
                           const editing = isSameTarget(editingTarget, target)
 
                           if (editing) {
@@ -2350,15 +2389,42 @@ function App() {
                                   <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
                                     取消
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="mandala-action is-muted"
-                                    onClick={() => handleResetTarget(target)}
-                                  >
-                                    恢复默认
-                                  </button>
+                                  {target.scope === 'pillar' && rootVisible && (
+                                    <button
+                                      type="button"
+                                      className="mandala-action is-muted"
+                                      onClick={() => handleResetTarget(target)}
+                                    >
+                                      删除
+                                    </button>
+                                  )}
                                 </div>
                               </div>
+                            )
+                          }
+
+                          if (!rootVisible) {
+                            return (
+                              <article
+                                key={cell.id}
+                                className={`mandala-cell is-add ${cell.role === 'core' ? 'is-core' : ''}`}
+                                aria-label={`${cell.marker} 添加卡片`}
+                              >
+                                <span className="mandala-marker">{cell.marker}</span>
+                                <h2 className="mandala-title">添加卡片</h2>
+                                <p className="mandala-subtitle">点击添加当前卡片</p>
+                                <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={() => handleStartAdd(target)}
+                                    title="添加"
+                                    aria-label={`添加 ${cell.marker} 卡片`}
+                                  >
+                                    <span aria-hidden="true">＋</span>
+                                  </button>
+                                </div>
+                              </article>
                             )
                           }
 
@@ -2400,6 +2466,22 @@ function App() {
                                     aria-label={`进入 ${cell.marker} 的 8 个行动点`}
                                   >
                                     <span aria-hidden="true">⤢</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-danger is-icon"
+                                    onClick={() => handleResetTarget(target)}
+                                    title="删除"
+                                    aria-label={`删除 ${cell.marker} ${content.title}`}
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M5 7H19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M9 7V5H15V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M8 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M12 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M16 10V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M7 7L8 20H16L17 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
                                   </button>
                                 </div>
                               </article>
