@@ -2194,18 +2194,36 @@ function App() {
                           }
 
                           return (
-                            <button
-                              key={cell.id}
-                              type="button"
-                              className="mandala-cell is-core"
-                              aria-label={`${cell.marker} ${content.title}`}
-                              onClick={() => handleStartEdit(target)}
-                            >
+                            <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
                               <span className="mandala-marker">{cell.marker}</span>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
-                              <p className="mandala-hint">点击编辑核心目标</p>
-                            </button>
+                              <div className="mandala-cell-actions">
+                                <button
+                                  type="button"
+                                  className="mandala-cell-action is-icon"
+                                  onClick={() => handleStartEdit(target)}
+                                  title="编辑"
+                                  aria-label={`编辑 ${cell.marker} ${content.title}`}
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    className="mandala-icon"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                  >
+                                    <path
+                                      d="M4 20H8L18.5 9.5C19.3 8.7 19.3 7.3 18.5 6.5L17.5 5.5C16.7 4.7 15.3 4.7 14.5 5.5L4 16V20Z"
+                                      stroke="currentColor"
+                                      strokeWidth="1.8"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                              </div>
+                            </article>
                           )
                         })}
 
@@ -2273,18 +2291,36 @@ function App() {
                             }
 
                             return (
-                              <button
-                                key={inputIdSuffix}
-                                type="button"
-                                className="mandala-cell is-core"
-                                onClick={() => handleStartEdit(centerTarget)}
-                                aria-label={`${marker} ${content.title}`}
-                              >
+                              <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${content.title}`}>
                                 <span className="mandala-marker">{marker}</span>
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
-                                <p className="mandala-hint">点击编辑当前下钻主题</p>
-                              </button>
+                                <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={() => handleStartEdit(centerTarget)}
+                                    title="编辑"
+                                    aria-label={`编辑 ${marker} ${content.title}`}
+                                  >
+                                    <svg
+                                      aria-hidden="true"
+                                      className="mandala-icon"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                      <path
+                                        d="M4 20H8L18.5 9.5C19.3 8.7 19.3 7.3 18.5 6.5L17.5 5.5C16.7 4.7 15.3 4.7 14.5 5.5L4 16V20Z"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </article>
                             )
                           }
 
