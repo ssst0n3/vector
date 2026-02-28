@@ -2444,11 +2444,22 @@ function App() {
 
                           if (cell.role === 'pillar') {
                             return (
-                              <article key={cell.id} className="mandala-cell" aria-label={`${cell.marker} ${content.title}`}>
+                              <article key={cell.id} className="mandala-cell has-drill-action" aria-label={`${cell.marker} ${content.title}`}>
                                 <span className="mandala-marker">{cell.marker}</span>
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
                                 <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-primary is-icon"
+                                    onClick={() => handleOpenPillar(cell.id as PillarId)}
+                                    title="进入下钻"
+                                    aria-label={`进入 ${cell.marker} 的 8 个行动点`}
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M8 5L16 12L8 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </button>
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-icon"
@@ -2471,15 +2482,6 @@ function App() {
                                         strokeLinejoin="round"
                                       />
                                     </svg>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="mandala-cell-action is-primary is-icon"
-                                    onClick={() => handleOpenPillar(cell.id as PillarId)}
-                                    title="进入下钻"
-                                    aria-label={`进入 ${cell.marker} 的 8 个行动点`}
-                                  >
-                                    <span aria-hidden="true">⤢</span>
                                   </button>
                                   <button
                                     type="button"
@@ -2720,13 +2722,24 @@ function App() {
                           return (
                             <article
                               key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
-                              className="mandala-cell"
+                              className="mandala-cell has-drill-action"
                               aria-label={`${marker} ${actionContent.title}`}
                             >
                               <span className="mandala-marker">{marker}</span>
                               <h2 className="mandala-title">{actionContent.title}</h2>
                               <p className="mandala-subtitle">{actionContent.subtitle}</p>
                               <div className="mandala-cell-actions">
+                                <button
+                                  type="button"
+                                  className="mandala-cell-action is-primary is-icon"
+                                  onClick={() => handleDrillDeeper(gridItem.actionId)}
+                                  title="继续下钻"
+                                  aria-label={`继续下钻 ${marker} ${actionContent.title}`}
+                                >
+                                  <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                    <path d="M8 5L16 12L8 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                </button>
                                 <button
                                   type="button"
                                   className="mandala-cell-action is-icon"
@@ -2749,15 +2762,6 @@ function App() {
                                       strokeLinejoin="round"
                                     />
                                   </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  className="mandala-cell-action is-primary is-icon"
-                                  onClick={() => handleDrillDeeper(gridItem.actionId)}
-                                  title="继续下钻"
-                                  aria-label={`继续下钻 ${marker} ${actionContent.title}`}
-                                >
-                                  <span aria-hidden="true">⤢</span>
                                 </button>
                                 <button
                                   type="button"
