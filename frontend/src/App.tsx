@@ -1419,18 +1419,30 @@ function App() {
 
                           if (cell.role === 'pillar') {
                             return (
-                              <button
-                                key={cell.id}
-                                type="button"
-                                className="mandala-cell"
-                                aria-label={`${cell.marker} ${content.title}，点击展开 8 个行动点`}
-                                onClick={() => handleOpenPillar(cell.id as PillarId)}
-                              >
+                              <article key={cell.id} className="mandala-cell" aria-label={`${cell.marker} ${content.title}`}>
                                 <span className="mandala-marker">{cell.marker}</span>
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
                                 <p className="mandala-hint">点击进入 {cell.marker} 的 8 个行动点</p>
-                              </button>
+                                <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action"
+                                    onClick={() => handleStartEdit(target)}
+                                    aria-label={`编辑 ${cell.marker} ${content.title}`}
+                                  >
+                                    编辑
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-primary"
+                                    onClick={() => handleOpenPillar(cell.id as PillarId)}
+                                    aria-label={`进入 ${cell.marker} 的 8 个行动点`}
+                                  >
+                                    进入下钻
+                                  </button>
+                                </div>
+                              </article>
                             )
                           }
 
