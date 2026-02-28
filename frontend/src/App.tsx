@@ -1726,20 +1726,20 @@ function App() {
                     <button
                       type="button"
                       role="tab"
-                      className={`layer-switch-item ${activeLayer === 'pillar' ? 'is-active' : ''}`}
-                      aria-selected={activeLayer === 'pillar'}
-                      onClick={() => handleMandalaLayerChange('pillar')}
-                    >
-                      下钻视图
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
                       className={`layer-switch-item ${activeLayer === 'overview' ? 'is-active' : ''}`}
                       aria-selected={activeLayer === 'overview'}
                       onClick={() => handleMandalaLayerChange('overview')}
                     >
                       OW64 全景
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      className={`layer-switch-item ${activeLayer === 'pillar' ? 'is-active' : ''}`}
+                      aria-selected={activeLayer === 'pillar'}
+                      onClick={() => handleMandalaLayerChange('pillar')}
+                    >
+                      下钻视图
                     </button>
                   </div>
 
