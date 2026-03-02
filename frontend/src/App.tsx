@@ -2826,13 +2826,16 @@ function App() {
                             return (
                               <article key={layoutCellId} className="ow64-overview-panel is-center">
                                 <div className="ow64-overview-head">
-                                  <p className="ow64-overview-title">主盘</p>
                                   <button
                                     type="button"
-                                    className="ghost-button"
+                                    className="ow64-open-button"
+                                    title="打开主盘"
+                                    aria-label="打开主盘"
                                     onClick={() => handleMandalaLayerChange('root')}
                                   >
-                                    打开
+                                    <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M8 5L16 12L8 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
                                   </button>
                                 </div>
                               <div className="ow64-mini-grid">
@@ -2849,7 +2852,6 @@ function App() {
                                         key={`root-${cell.id}`}
                                         className={`ow64-mini-cell ${cell.id === 'objective' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
                                       >
-                                        <span className="ow64-mini-marker">{cell.marker}</span>
                                         {isVisible && <p className="ow64-mini-text">{content.title}</p>}
                                       </div>
                                     )
@@ -2863,9 +2865,16 @@ function App() {
                           return (
                             <article key={pillarId} className="ow64-overview-panel">
                               <div className="ow64-overview-head">
-                                <p className="ow64-overview-title">{PILLAR_META[pillarId].marker} 行动盘</p>
-                                <button type="button" className="ghost-button" onClick={() => handleOpenPillar(pillarId)}>
-                                  打开
+                                <button
+                                  type="button"
+                                  className="ow64-open-button"
+                                  title={`打开 ${PILLAR_META[pillarId].marker} 行动盘`}
+                                  aria-label={`打开 ${PILLAR_META[pillarId].marker} 行动盘`}
+                                  onClick={() => handleOpenPillar(pillarId)}
+                                >
+                                  <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                                    <path d="M8 5L16 12L8 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
                                 </button>
                               </div>
                               <div className="ow64-mini-grid">
@@ -2874,8 +2883,6 @@ function App() {
                                     gridItem.type === 'center'
                                       ? { scope: 'pillar', pillarId }
                                       : { scope: 'drillCore', path: [pillarId] as DrillPath }
-                                  const marker =
-                                    gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
                                   const content =
                                     gridItem.type === 'center'
                                       ? getContentByTarget(currentBoard, target)
@@ -2890,7 +2897,6 @@ function App() {
                                       key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
                                       className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
                                     >
-                                      <span className="ow64-mini-marker">{marker}</span>
                                       {isVisible && <p className="ow64-mini-text">{content.title}</p>}
                                     </div>
                                   )
@@ -2924,7 +2930,6 @@ function App() {
                                 key={cell.id}
                                 className={`mandala-cell mandala-editor ${cell.role === 'core' ? 'is-core' : ''}`}
                               >
-                                <span className="mandala-marker">{cell.marker}</span>
                                 <label className="mandala-field" htmlFor={`title-${cell.id}`}>
                                   <span>目标</span>
                                   <input
@@ -3004,7 +3009,6 @@ function App() {
                                 onDrop={(event) => handleCardDrop(event, rootDragTarget as DraggableCardTarget)}
                                 onDragEnd={handleCardDragEnd}
                               >
-                                <span className="mandala-marker">{cell.marker}</span>
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
                                 <div className="mandala-cell-actions">
@@ -3065,7 +3069,6 @@ function App() {
 
                           return (
                             <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
-                              <span className="mandala-marker">{cell.marker}</span>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
                               <div className="mandala-cell-actions">
@@ -3114,7 +3117,6 @@ function App() {
                             if (editing) {
                               return (
                                 <div key={inputIdSuffix} className="mandala-cell mandala-editor is-core">
-                                  <span className="mandala-marker">{marker}</span>
                                   <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
                                     <span>目标</span>
                                     <input
@@ -3164,7 +3166,6 @@ function App() {
 
                             return (
                               <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${centerContent.title}`}>
-                                <span className="mandala-marker">{marker}</span>
                                 <h2 className="mandala-title">{centerContent.title}</h2>
                                 <p className="mandala-subtitle">{centerContent.subtitle}</p>
                                 <div className="mandala-cell-actions">
@@ -3210,7 +3211,6 @@ function App() {
 
                             return (
                               <div key={inputIdSuffix} className="mandala-cell mandala-editor">
-                                <span className="mandala-marker">{marker}</span>
                                 <label className="mandala-field" htmlFor={`title-${inputIdSuffix}`}>
                                   <span>目标</span>
                                   <input
@@ -3298,7 +3298,6 @@ function App() {
                               onDrop={(event) => handleCardDrop(event, actionDragTarget)}
                               onDragEnd={handleCardDragEnd}
                             >
-                              <span className="mandala-marker">{marker}</span>
                               <h2 className="mandala-title">{actionContent.title}</h2>
                               <p className="mandala-subtitle">{actionContent.subtitle}</p>
                               <div className="mandala-cell-actions">

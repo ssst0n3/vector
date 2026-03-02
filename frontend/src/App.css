@@ -493,17 +493,30 @@
 .ow64-overview-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.5rem;
   margin-bottom: 0.65rem;
 }
 
-.ow64-overview-title {
-  margin: 0;
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.ow64-open-button {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-1);
   color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.ow64-open-button:hover,
+.ow64-open-button:focus-visible {
+  border-color: #1b4332;
+  color: #1b4332;
+  background: #fffdf8;
 }
 
 .ow64-mini-grid {
@@ -520,6 +533,8 @@
   background: #fffdf8;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 0.25rem;
 }
 
@@ -540,6 +555,7 @@
   font-size: 0.72rem;
   line-height: 1.25;
   word-break: break-word;
+  text-align: center;
 }
 
 .mandala-cell {
