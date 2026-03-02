@@ -196,6 +196,7 @@ const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
 const PROJECT_LIST_STORAGE_KEY = 'project:list:v1'
 const LEGACY_PROJECT_META_STORAGE_KEY = 'project:meta:v1'
+const DATA_SOURCE_URL_STORAGE_KEY = 'ow64:data-source:url'
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
 
@@ -579,6 +580,28 @@ const persistProjectList = (projects: ProjectItem[]) => {
   window.localStorage.setItem(PROJECT_LIST_STORAGE_KEY, JSON.stringify(projects))
 }
 
+const loadConfiguredSourceUrl = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const source = window.localStorage.getItem(DATA_SOURCE_URL_STORAGE_KEY)?.trim()
+  return source ? source : null
+}
+
+const persistConfiguredSourceUrl = (source: string | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (!source) {
+    window.localStorage.removeItem(DATA_SOURCE_URL_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(DATA_SOURCE_URL_STORAGE_KEY, source)
+}
+
 const hasLegacyProjectEvidence = (): boolean => {
   if (typeof window === 'undefined') {
     return false
@@ -789,7 +812,8 @@ const loadInitialProjectDataFromSource = async (source: string): Promise<Initial
   }
 }
 
-const SOURCE_URL = getSourceUrlFromSearchParams()
+const URL_SOURCE_URL = getSourceUrlFromSearchParams()
+const CONFIGURED_SOURCE_URL = loadConfiguredSourceUrl()
 const INITIAL_PROJECT_DATA = loadInitialProjectDataFromLocalStorage()
 
 const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
@@ -1588,34 +1612,51 @@ function App() {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
   const [markdownImportFeedback, setMarkdownImportFeedback] = useState('')
+  const [sourceUrlDraft, setSourceUrlDraft] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
+  const [configuredSourceUrl, setConfiguredSourceUrl] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
+  const [sourceLoadFeedback, setSourceLoadFeedback] = useState('')
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => {
-    if (!SOURCE_URL) {
-      return
-    }
+  const effectiveSourceUrl = URL_SOURCE_URL ?? (configuredSourceUrl.trim() || null)
 
+  const applyInitialProjectData = (data: InitialProjectData) => {
+    setProjects(data.projects)
+    setBoardByProject(data.boards)
+    setSelectedProjectId(data.selectedProjectId)
+    setProjectEditingId(null)
+    setIsCreatingProject(false)
+    setShowProjectInfo(false)
+    setEditingTarget(null)
+    setDraftTitle('')
+    setDraftSubtitle('')
+    setActiveLayer('root')
+    setDrillPath(null)
+  }
+
+  useEffect(() => {
     let disposed = false
 
     const hydrateFromSource = async () => {
-      const sourceData = await loadInitialProjectDataFromSource(SOURCE_URL)
-      if (disposed || !sourceData) {
+      if (!effectiveSourceUrl) {
+        applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
         return
       }
 
-      setProjects(sourceData.projects)
-      setBoardByProject(sourceData.boards)
-      setSelectedProjectId(sourceData.selectedProjectId)
-      setProjectEditingId(null)
-      setIsCreatingProject(false)
-      setShowProjectInfo(false)
-      setEditingTarget(null)
-      setDraftTitle('')
-      setDraftSubtitle('')
-      setActiveLayer('root')
-      setDrillPath(null)
+      const sourceData = await loadInitialProjectDataFromSource(effectiveSourceUrl)
+      if (disposed) {
+        return
+      }
+
+      if (!sourceData) {
+        applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
+        setSourceLoadFeedback('数据源加载失败，已回退到 localStorage。')
+        return
+      }
+
+      applyInitialProjectData(sourceData)
+      setSourceLoadFeedback('')
     }
 
     void hydrateFromSource()
@@ -1623,7 +1664,7 @@ function App() {
     return () => {
       disposed = true
     }
-  }, [])
+  }, [effectiveSourceUrl])
 
   const selectedProject = useMemo(
     () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
@@ -1656,6 +1697,30 @@ function App() {
     setProjectDraftName('')
     setProjectDraftSummary('')
     setProjectDraftStatus(PROJECT_STATUS_OPTIONS[0])
+  }
+
+  const handleSourceSave = () => {
+    const trimmedSource = sourceUrlDraft.trim()
+    if (!trimmedSource) {
+      return
+    }
+
+    try {
+      const normalizedSource = new URL(trimmedSource, window.location.href).toString()
+      persistConfiguredSourceUrl(normalizedSource)
+      setConfiguredSourceUrl(normalizedSource)
+      setSourceUrlDraft(normalizedSource)
+      setSourceLoadFeedback(URL_SOURCE_URL ? '已保存地址。当前仍优先使用 URL 的 src 参数。' : '')
+    } catch {
+      setSourceLoadFeedback('地址无效，请输入可访问的 S3 JSON URL。')
+    }
+  }
+
+  const handleSourceClear = () => {
+    persistConfiguredSourceUrl(null)
+    setConfiguredSourceUrl('')
+    setSourceUrlDraft('')
+    setSourceLoadFeedback(URL_SOURCE_URL ? '已清空页面配置。当前仍优先使用 URL 的 src 参数。' : '')
   }
 
   const handleViewChange = (nextView: ViewMode) => {
@@ -2192,6 +2257,36 @@ function App() {
               </button>
             </div>
           </nav>
+
+          <section className="sidebar-section" aria-label="Data source configuration">
+            <p className="nav-title">Data Source</p>
+            <label className="project-field" htmlFor="data-source-url">
+              <span>S3 地址（JSON）</span>
+              <input
+                id="data-source-url"
+                className="project-input"
+                value={sourceUrlDraft}
+                onChange={(event) => setSourceUrlDraft(event.target.value)}
+                placeholder="https://bucket.s3.region.amazonaws.com/data.json"
+              />
+            </label>
+            <div className="project-actions">
+              <button type="button" className="mandala-action" onClick={handleSourceSave} disabled={!sourceUrlDraft.trim()}>
+                保存并加载
+              </button>
+              <button type="button" className="mandala-action is-muted" onClick={handleSourceClear}>
+                清空
+              </button>
+            </div>
+            {URL_SOURCE_URL ? (
+              <p className="mandala-path sidebar-mandala-path">当前来源：URL src 参数（优先）</p>
+            ) : configuredSourceUrl.trim() ? (
+              <p className="mandala-path sidebar-mandala-path">当前来源：页面配置地址</p>
+            ) : (
+              <p className="mandala-path sidebar-mandala-path">当前来源：localStorage</p>
+            )}
+            {sourceLoadFeedback && <p className="mandala-path sidebar-mandala-path">{sourceLoadFeedback}</p>}
+          </section>
 
           {isProjectDetailView && selectedProject && (
             <>
