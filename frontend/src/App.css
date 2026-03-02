@@ -676,7 +676,20 @@
   font: inherit;
   color: inherit;
   cursor: pointer;
+  position: relative;
   transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.ow64-mini-cell-trigger::after {
+  content: '>';
+  position: absolute;
+  top: 0.24rem;
+  right: 0.38rem;
+  font-size: 0.62rem;
+  line-height: 1;
+  color: var(--text-muted);
+  opacity: 0.72;
+  transition: transform 0.18s ease, color 0.18s ease, opacity 0.18s ease;
 }
 
 .ow64-mini-cell-trigger:hover,
@@ -686,8 +699,19 @@
   color: var(--text-primary);
 }
 
+.ow64-mini-cell-trigger:hover::after,
+.ow64-mini-cell-trigger:focus-visible::after {
+  color: #1b4332;
+  opacity: 1;
+  transform: translateX(1px);
+}
+
 .ow64-mini-cell-trigger:disabled {
   cursor: default;
+}
+
+.ow64-mini-cell-trigger:disabled::after {
+  opacity: 0.32;
 }
 
 .ow64-mini-cell.is-core {
