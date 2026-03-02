@@ -1656,6 +1656,7 @@ function App() {
   const [sourceUrlDraft, setSourceUrlDraft] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
   const [configuredSourceUrl, setConfiguredSourceUrl] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
   const [sourceLoadFeedback, setSourceLoadFeedback] = useState('')
+  const [isSavingToSource, setIsSavingToSource] = useState(false)
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -1780,6 +1781,30 @@ function App() {
     setConfiguredSourceUrl('')
     setSourceUrlDraft('')
     setSourceLoadFeedback(URL_SOURCE_URL ? '已清空页面配置。当前仍优先使用 URL 的 src 参数。' : '')
+  }
+
+  const handleSaveToSource = async () => {
+    if (!effectiveSourceUrl) {
+      setSourceLoadFeedback('未配置可保存的 S3 地址。')
+      return
+    }
+
+    setIsSavingToSource(true)
+
+    const dataToSave: InitialProjectData = {
+      projects,
+      boards: boardByProject,
+      selectedProjectId,
+    }
+
+    const saved = await createSourceDataAtUrl(effectiveSourceUrl, dataToSave)
+    if (saved) {
+      setSourceLoadFeedback(URL_SOURCE_URL ? '已保存到 URL src 指向的 S3 地址。' : '已保存到页面配置的 S3 地址。')
+    } else {
+      setSourceLoadFeedback('保存到 S3 失败，请检查地址权限、CORS 或签名配置。')
+    }
+
+    setIsSavingToSource(false)
   }
 
   const handleViewChange = (nextView: ViewMode) => {
@@ -2332,6 +2357,9 @@ function App() {
             <div className="project-actions">
               <button type="button" className="mandala-action" onClick={handleSourceSave} disabled={!sourceUrlDraft.trim()}>
                 保存并加载
+              </button>
+              <button type="button" className="mandala-action" onClick={handleSaveToSource} disabled={!effectiveSourceUrl || isSavingToSource}>
+                {isSavingToSource ? '保存中...' : '保存到 S3'}
               </button>
               <button type="button" className="mandala-action is-muted" onClick={handleSourceClear}>
                 清空
