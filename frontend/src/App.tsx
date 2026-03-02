@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import './App.css'
 
@@ -683,7 +683,7 @@ type InitialProjectData = {
   selectedProjectId: ProjectId | null
 }
 
-const loadInitialProjectData = (): InitialProjectData => {
+const loadInitialProjectDataFromLocalStorage = (): InitialProjectData => {
   const projects = loadProjectList()
   const boards = projects.reduce(
     (acc, project) => {
@@ -700,7 +700,97 @@ const loadInitialProjectData = (): InitialProjectData => {
   }
 }
 
-const INITIAL_PROJECT_DATA = loadInitialProjectData()
+const getSourceUrlFromSearchParams = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const src = new URLSearchParams(window.location.search).get('src')?.trim()
+  return src ? src : null
+}
+
+const parseInitialProjectDataFromSource = (incoming: unknown): InitialProjectData | null => {
+  if (!incoming || typeof incoming !== 'object') {
+    return null
+  }
+
+  const payload = incoming as Partial<{
+    projects: unknown
+    boards: unknown
+    selectedProjectId: unknown
+  }>
+
+  if (!Array.isArray(payload.projects)) {
+    return null
+  }
+
+  const seenIds = new Set<ProjectId>()
+  const projects: ProjectItem[] = []
+
+  for (const item of payload.projects) {
+    if (!isProjectItem(item)) {
+      continue
+    }
+
+    const sanitized = sanitizeProjectItem(item)
+    if (!sanitized || seenIds.has(sanitized.id)) {
+      continue
+    }
+
+    seenIds.add(sanitized.id)
+    projects.push(sanitized)
+  }
+
+  const boardPayload = payload.boards
+  const boardsById = boardPayload && typeof boardPayload === 'object' ? (boardPayload as Record<string, unknown>) : {}
+
+  const boards = projects.reduce(
+    (acc, project) => {
+      acc[project.id] = mergeBoardWithDefault(boardsById[project.id])
+      return acc
+    },
+    {} as Record<ProjectId, Ow64Board>,
+  )
+
+  const selectedProjectId =
+    typeof payload.selectedProjectId === 'string' && projects.some((project) => project.id === payload.selectedProjectId)
+      ? payload.selectedProjectId
+      : projects[0]?.id ?? null
+
+  return {
+    projects,
+    boards,
+    selectedProjectId,
+  }
+}
+
+const loadInitialProjectDataFromSource = async (source: string): Promise<InitialProjectData | null> => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  let sourceUrl: string
+  try {
+    sourceUrl = new URL(source, window.location.href).toString()
+  } catch {
+    return null
+  }
+
+  try {
+    const response = await fetch(sourceUrl)
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = (await response.json()) as unknown
+    return parseInitialProjectDataFromSource(payload)
+  } catch {
+    return null
+  }
+}
+
+const SOURCE_URL = getSourceUrlFromSearchParams()
+const INITIAL_PROJECT_DATA = loadInitialProjectDataFromLocalStorage()
 
 const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
   if (!left) {
@@ -1501,6 +1591,39 @@ function App() {
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!SOURCE_URL) {
+      return
+    }
+
+    let disposed = false
+
+    const hydrateFromSource = async () => {
+      const sourceData = await loadInitialProjectDataFromSource(SOURCE_URL)
+      if (disposed || !sourceData) {
+        return
+      }
+
+      setProjects(sourceData.projects)
+      setBoardByProject(sourceData.boards)
+      setSelectedProjectId(sourceData.selectedProjectId)
+      setProjectEditingId(null)
+      setIsCreatingProject(false)
+      setShowProjectInfo(false)
+      setEditingTarget(null)
+      setDraftTitle('')
+      setDraftSubtitle('')
+      setActiveLayer('root')
+      setDrillPath(null)
+    }
+
+    void hydrateFromSource()
+
+    return () => {
+      disposed = true
+    }
+  }, [])
 
   const selectedProject = useMemo(
     () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
