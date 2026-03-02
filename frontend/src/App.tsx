@@ -1663,7 +1663,6 @@ function App() {
   const [projectDraftName, setProjectDraftName] = useState('')
   const [projectDraftSummary, setProjectDraftSummary] = useState('')
   const [projectDraftStatus, setProjectDraftStatus] = useState<string>(PROJECT_STATUS_OPTIONS[0])
-  const [showProjectInfo, setShowProjectInfo] = useState(false)
   const [editingTarget, setEditingTarget] = useState<EditingTarget | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
@@ -1686,7 +1685,6 @@ function App() {
     setSelectedProjectId(data.selectedProjectId)
     setProjectEditingId(null)
     setIsCreatingProject(false)
-    setShowProjectInfo(false)
     setEditingTarget(null)
     setDraftTitle('')
     setDraftSubtitle('')
@@ -1842,7 +1840,6 @@ function App() {
     resetEditingDraft()
     resetMandalaLayer()
     resetProjectDraft()
-    setShowProjectInfo(false)
     setView(nextView)
   }
 
@@ -1859,18 +1856,9 @@ function App() {
     resetEditingDraft()
     resetMandalaLayer()
     resetProjectDraft()
-    setShowProjectInfo(false)
     setSelectedProjectId(projectId)
     setView('projectDetail')
     setActiveTab('mandala')
-  }
-
-  const handleBackToProjects = () => {
-    resetEditingDraft()
-    resetMandalaLayer()
-    resetProjectDraft()
-    setShowProjectInfo(false)
-    setView('projects')
   }
 
   const handleProjectEditStart = (projectId: ProjectId) => {
@@ -1884,7 +1872,6 @@ function App() {
     setProjectDraftName(targetProject.name)
     setProjectDraftSummary(targetProject.summary)
     setProjectDraftStatus(targetProject.status)
-    setShowProjectInfo(true)
   }
 
   const handleProjectCreateStart = () => {
@@ -1977,7 +1964,6 @@ function App() {
     if (selectedProjectId === projectId) {
       resetEditingDraft()
       resetMandalaLayer()
-      setShowProjectInfo(false)
       const nextSelected = nextProjects[0]?.id ?? null
       setSelectedProjectId(nextSelected)
       if (!nextSelected) {
@@ -2445,31 +2431,6 @@ function App() {
                 <p className="nav-title">Project Workspace</p>
                 <h2 className="sidebar-project-title">{selectedProject.name}</h2>
                 <p className="sidebar-project-status">{selectedProject.status}</p>
-                <div className="sidebar-actions">
-                  <button type="button" className="ghost-button" onClick={handleBackToProjects}>
-                    返回项目管理
-                  </button>
-                  {projectEditingId !== selectedProjectId && (
-                    <button type="button" className="ghost-button" onClick={() => handleProjectEditStart(selectedProject.id)}>
-                      编辑项目信息
-                    </button>
-                  )}
-                  {projectEditingId !== selectedProjectId && (
-                    <button type="button" className="ghost-button" onClick={() => handleProjectDelete(selectedProject.id)}>
-                      删除项目
-                    </button>
-                  )}
-                  {projectEditingId !== selectedProjectId && (
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={() => setShowProjectInfo((prev) => !prev)}
-                      aria-expanded={showProjectInfo}
-                    >
-                      {showProjectInfo ? '收起项目信息' : '项目信息'}
-                    </button>
-                  )}
-                </div>
 
                 <section className="tab-bar sidebar-tab-bar" role="tablist" aria-label="Project tabs">
                   {PROJECT_TABS.map((tab) => (
@@ -2485,10 +2446,6 @@ function App() {
                     </button>
                   ))}
                 </section>
-
-                {showProjectInfo && projectEditingId !== selectedProjectId && (
-                  <p className="focus-summary project-summary-text">{selectedProject.summary}</p>
-                )}
 
                 {projectEditingId === selectedProjectId && (
                   <div className="project-editor focus-project-editor" role="group" aria-label="编辑项目信息">
@@ -2628,81 +2585,8 @@ function App() {
                 <p className="content-eyebrow">Projects</p>
                 <h1 className="content-title">项目管理</h1>
                 <p className="content-desc">浏览项目列表，进入详情空间。</p>
-                <div className="detail-actions">
-                  <button type="button" className="ghost-button" onClick={handleProjectCreateStart}>
-                    新建项目
-                  </button>
-                </div>
               </section>
               <section className="content-panel projects-panel">
-                {isCreatingProject && (
-                  <article className="panel-card project-card project-card-create">
-                    <div>
-                      <p className="project-status">New project</p>
-                      <h2 className="panel-title">创建新项目</h2>
-                      <p className="panel-desc project-summary-text">填写项目信息后保存，即可进入项目空间。</p>
-                    </div>
-                    <div className="project-editor project-editor-inline" role="group" aria-label="创建项目">
-                      <label className="project-field" htmlFor="project-name-create">
-                        <span>项目名称</span>
-                        <input
-                          id="project-name-create"
-                          className="project-input"
-                          value={projectDraftName}
-                          onChange={(event) => setProjectDraftName(event.target.value)}
-                          placeholder="输入项目名称"
-                        />
-                      </label>
-                      <label className="project-field" htmlFor="project-summary-create">
-                        <span>项目简介</span>
-                        <textarea
-                          id="project-summary-create"
-                          className="project-input project-textarea"
-                          value={projectDraftSummary}
-                          onChange={(event) => setProjectDraftSummary(event.target.value)}
-                          placeholder="输入项目简介"
-                          rows={3}
-                        />
-                      </label>
-                      <label className="project-field" htmlFor="project-status-create">
-                        <span>项目状态</span>
-                        <select
-                          id="project-status-create"
-                          className="project-input"
-                          value={projectDraftStatus}
-                          onChange={(event) => setProjectDraftStatus(event.target.value)}
-                        >
-                          {PROJECT_STATUS_OPTIONS.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="project-actions">
-                        <button
-                          type="button"
-                          className="mandala-action"
-                          onClick={handleProjectEditSave}
-                          disabled={!projectDraftName.trim()}
-                        >
-                          保存
-                        </button>
-                        <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
-                          取消
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                )}
-
-                {!isCreatingProject && projects.length === 0 && (
-                  <article className="panel-card project-empty-state">
-                    <h2 className="panel-title">暂无项目</h2>
-                    <p className="panel-desc">点击“新建项目”开始创建你的第一个项目。</p>
-                  </article>
-                )}
-
                 {projects.map((project) => (
                   <article key={project.id} className="panel-card project-card">
                     <div className="project-card-body">
@@ -2819,6 +2703,79 @@ function App() {
                     )}
                   </article>
                 ))}
+
+                {isCreatingProject ? (
+                  <article className="panel-card project-card project-card-create">
+                    <div>
+                      <p className="project-status">New project</p>
+                      <h2 className="panel-title">创建新项目</h2>
+                      <p className="panel-desc project-summary-text">填写项目信息后保存，即可进入项目空间。</p>
+                    </div>
+                    <div className="project-editor project-editor-inline" role="group" aria-label="创建项目">
+                      <label className="project-field" htmlFor="project-name-create">
+                        <span>项目名称</span>
+                        <input
+                          id="project-name-create"
+                          className="project-input"
+                          value={projectDraftName}
+                          onChange={(event) => setProjectDraftName(event.target.value)}
+                          placeholder="输入项目名称"
+                        />
+                      </label>
+                      <label className="project-field" htmlFor="project-summary-create">
+                        <span>项目简介</span>
+                        <textarea
+                          id="project-summary-create"
+                          className="project-input project-textarea"
+                          value={projectDraftSummary}
+                          onChange={(event) => setProjectDraftSummary(event.target.value)}
+                          placeholder="输入项目简介"
+                          rows={3}
+                        />
+                      </label>
+                      <label className="project-field" htmlFor="project-status-create">
+                        <span>项目状态</span>
+                        <select
+                          id="project-status-create"
+                          className="project-input"
+                          value={projectDraftStatus}
+                          onChange={(event) => setProjectDraftStatus(event.target.value)}
+                        >
+                          {PROJECT_STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="project-actions">
+                        <button
+                          type="button"
+                          className="mandala-action"
+                          onClick={handleProjectEditSave}
+                          disabled={!projectDraftName.trim()}
+                        >
+                          保存
+                        </button>
+                        <button type="button" className="mandala-action is-muted" onClick={handleProjectEditCancel}>
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ) : (
+                  <button
+                    type="button"
+                    className="panel-card project-card project-card-create project-card-create-trigger"
+                    onClick={handleProjectCreateStart}
+                    aria-label="新建项目"
+                    title="新建项目"
+                  >
+                    <span className="project-card-plus" aria-hidden="true">
+                      +
+                    </span>
+                  </button>
+                )}
               </section>
             </>
           )}

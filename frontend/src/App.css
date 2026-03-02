@@ -262,13 +262,18 @@
 }
 
 .projects-panel {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 420px));
+  justify-content: start;
+  align-items: start;
 }
 
 .project-card {
   position: relative;
   align-items: flex-start;
   text-align: left;
+  width: 100%;
+  max-width: 420px;
+  justify-self: start;
   cursor: default;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
@@ -280,6 +285,34 @@
 
 .project-card-create {
   border-style: dashed;
+}
+
+.project-card-create-trigger {
+  position: relative;
+  min-height: 180px;
+  display: block;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.project-card-create-trigger .project-card-plus {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-block;
+  font-size: 2.9rem;
+  line-height: 1;
+  font-weight: 300;
+}
+
+.project-card-create-trigger:hover,
+.project-card-create-trigger:focus-visible {
+  border-color: #1b4332;
+  color: #1b4332;
+  background: #fffdf8;
 }
 
 .project-card:hover {
