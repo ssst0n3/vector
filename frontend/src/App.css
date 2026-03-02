@@ -495,13 +495,13 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.4rem;
 }
 
 .ow64-open-button {
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid var(--border-strong);
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
   border-radius: 999px;
   background: var(--surface-1);
   color: var(--text-muted);
@@ -517,6 +517,11 @@
   border-color: #1b4332;
   color: #1b4332;
   background: #fffdf8;
+}
+
+.ow64-open-button .project-tool-icon {
+  width: 0.75rem;
+  height: 0.75rem;
 }
 
 .ow64-mini-grid {
