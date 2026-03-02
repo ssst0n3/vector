@@ -215,6 +215,7 @@
 
 .app-main.is-project-mandala {
   min-height: 0;
+  padding: 0.6rem clamp(0.55rem, 1.1vw, 1rem);
 }
 
 .focus-summary {
@@ -244,6 +245,10 @@
   flex: 1;
   min-height: 0;
   padding: 0.3rem 0 0.6rem;
+}
+
+.app-main.is-project-mandala .focus-content {
+  padding: 0;
 }
 
 .content-header {
@@ -500,7 +505,7 @@
 }
 
 .mandala-layout {
-  width: min(1400px, 100%);
+  width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -508,6 +513,7 @@
 .app-main.is-project-mandala .mandala-layout {
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 .mandala-toolbar-actions {
@@ -576,15 +582,20 @@
 }
 
 .ow64-overview-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
+  overflow-y: auto;
   padding-bottom: 0.4rem;
 }
 
 .ow64-overview-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(260px, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 0.9rem;
   min-width: 860px;
+  min-height: 100%;
 }
 
 .ow64-overview-panel {
