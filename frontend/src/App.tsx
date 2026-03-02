@@ -787,28 +787,69 @@ const parseInitialProjectDataFromSource = (incoming: unknown): InitialProjectDat
   }
 }
 
-const loadInitialProjectDataFromSource = async (source: string): Promise<InitialProjectData | null> => {
+type SourceLoadResult =
+  | { status: 'ok'; data: InitialProjectData }
+  | { status: 'not-found' }
+  | { status: 'error' }
+
+const loadInitialProjectDataFromSource = async (source: string): Promise<SourceLoadResult> => {
   if (typeof window === 'undefined') {
-    return null
+    return { status: 'error' }
   }
 
   let sourceUrl: string
   try {
     sourceUrl = new URL(source, window.location.href).toString()
   } catch {
-    return null
+    return { status: 'error' }
   }
 
   try {
     const response = await fetch(sourceUrl)
+    if (response.status === 404) {
+      return { status: 'not-found' }
+    }
+
     if (!response.ok) {
-      return null
+      return { status: 'error' }
     }
 
     const payload = (await response.json()) as unknown
-    return parseInitialProjectDataFromSource(payload)
+    const parsed = parseInitialProjectDataFromSource(payload)
+    if (!parsed) {
+      return { status: 'error' }
+    }
+
+    return { status: 'ok', data: parsed }
   } catch {
-    return null
+    return { status: 'error' }
+  }
+}
+
+const createSourceDataAtUrl = async (source: string, data: InitialProjectData): Promise<boolean> => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  let sourceUrl: string
+  try {
+    sourceUrl = new URL(source, window.location.href).toString()
+  } catch {
+    return false
+  }
+
+  try {
+    const response = await fetch(sourceUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    return response.ok
+  } catch {
+    return false
   }
 }
 
@@ -1649,14 +1690,32 @@ function App() {
         return
       }
 
-      if (!sourceData) {
-        applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
-        setSourceLoadFeedback('数据源加载失败，已回退到 localStorage。')
+      if (sourceData.status === 'ok') {
+        applyInitialProjectData(sourceData.data)
+        setSourceLoadFeedback('')
         return
       }
 
-      applyInitialProjectData(sourceData)
-      setSourceLoadFeedback('')
+      const localData = loadInitialProjectDataFromLocalStorage()
+      if (sourceData.status === 'not-found' && !URL_SOURCE_URL) {
+        const created = await createSourceDataAtUrl(effectiveSourceUrl, localData)
+        if (disposed) {
+          return
+        }
+
+        if (created) {
+          applyInitialProjectData(localData)
+          setSourceLoadFeedback('S3 地址不存在，已自动创建并初始化默认数据。')
+          return
+        }
+
+        applyInitialProjectData(localData)
+        setSourceLoadFeedback('S3 地址不存在，但创建失败，已回退到 localStorage。')
+        return
+      }
+
+      applyInitialProjectData(localData)
+      setSourceLoadFeedback('数据源加载失败，已回退到 localStorage。')
     }
 
     void hydrateFromSource()
