@@ -2218,6 +2218,15 @@ function App() {
     resetMandalaLayer()
   }
 
+  const handleBackFromCenterCard = () => {
+    if (activeDrillPath.length > 1) {
+      handleBackOneLevel()
+      return
+    }
+
+    handleBackToRoot()
+  }
+
   const handleCardDragStart = (event: DragEvent<HTMLElement>, target: DraggableCardTarget) => {
     setDragSourceTarget(target)
     setDragOverKey(null)
@@ -3169,6 +3178,17 @@ function App() {
                                 <h2 className="mandala-title">{centerContent.title}</h2>
                                 <p className="mandala-subtitle">{centerContent.subtitle}</p>
                                 <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={handleBackFromCenterCard}
+                                    title="返回上一层"
+                                    aria-label="返回上一层"
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M16 5L8 12L16 19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </button>
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-icon"
