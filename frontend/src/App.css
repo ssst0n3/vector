@@ -677,13 +677,6 @@
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
-.ow64-mini-cell:not(.is-core) {
-  width: 90%;
-  height: 90%;
-  justify-self: center;
-  align-self: center;
-}
-
 .ow64-mini-cell-trigger {
   width: 100%;
   font: inherit;
@@ -744,7 +737,7 @@
 .ow64-mini-text {
   margin: 0;
   max-width: 100%;
-  font-size: clamp(0.6rem, 0.72vw, 0.72rem);
+  font-size: clamp(0.66rem, 0.82vw, 0.8rem);
   line-height: 1.2;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -1226,17 +1219,12 @@
     padding: 0.18rem;
   }
 
-  .ow64-mini-cell:not(.is-core) {
-    width: 88%;
-    height: 88%;
-  }
-
   .ow64-mini-cell.is-core {
     box-shadow: 0 4px 10px rgba(27, 67, 50, 0.12);
   }
 
   .ow64-mini-text {
-    font-size: 0.58rem;
+    font-size: 0.64rem;
   }
 
   .ow64-mini-subtitle {
