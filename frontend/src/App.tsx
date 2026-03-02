@@ -1673,6 +1673,7 @@ function App() {
   const [sourceLoadFeedback, setSourceLoadFeedback] = useState('')
   const [isSavingToSource, setIsSavingToSource] = useState(false)
   const [isDragEnabled, setIsDragEnabled] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -1802,14 +1803,6 @@ function App() {
     } catch {
       setSourceLoadFeedback('地址无效，请输入可访问的 S3 JSON URL。')
     }
-  }
-
-  const handleSourceClear = () => {
-    persistConfiguredSourceUrl(null)
-    setConfiguredSourceUrl('')
-    setSourceUrlDraft('')
-    setQuerySourceUrl(syncSourceUrlToSearchParams(null))
-    setSourceLoadFeedback('已清空页面配置，并移除 URL 的 src 参数。')
   }
 
   const handleSaveToSource = async () => {
@@ -2366,8 +2359,28 @@ function App() {
 
   return (
     <div className={`app ${isProjectDetailView ? 'is-focus-layout' : ''}`}>
-      <div className={`app-body ${isProjectDetailView ? 'is-focus-body' : ''}`}>
-        <aside className={`app-sidebar ${isProjectDetailView ? 'is-focus-sidebar' : ''}`}>
+      <div className={`app-body ${isProjectDetailView ? 'is-focus-body' : ''} ${isSidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
+        <aside className={`app-sidebar ${isProjectDetailView ? 'is-focus-sidebar' : ''} ${isSidebarCollapsed ? 'is-collapsed' : ''}`}>
+          <div className="sidebar-toggle-row">
+            <button
+              type="button"
+              className="sidebar-collapse-toggle"
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              aria-label={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+              aria-expanded={!isSidebarCollapsed}
+              title={isSidebarCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+            >
+              {isSidebarCollapsed ? (
+                <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M10 6L16 12L10 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
+                  <path d="M14 6L8 12L14 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          </div>
           <nav className="side-nav" aria-label="Primary">
             <p className="nav-title">Navigation</p>
             <div className="nav-items">
@@ -2376,6 +2389,8 @@ function App() {
                 className={`nav-item ${view === 'home' ? 'is-active' : ''}`}
                 onClick={() => handleViewChange('home')}
                 aria-current={view === 'home' ? 'page' : undefined}
+                data-short="首"
+                title="首页"
               >
                 <span className="nav-label">首页</span>
                 <span className="nav-desc">项目与任务概览</span>
@@ -2385,6 +2400,8 @@ function App() {
                 className={`nav-item ${view === 'projects' ? 'is-active' : ''}`}
                 onClick={() => handleViewChange('projects')}
                 aria-current={view === 'projects' ? 'page' : undefined}
+                data-short="项"
+                title="项目管理"
               >
                 <span className="nav-label">项目管理</span>
                 <span className="nav-desc">项目列表与管理入口</span>
@@ -2410,9 +2427,6 @@ function App() {
               </button>
               <button type="button" className="mandala-action" onClick={handleSaveToSource} disabled={!effectiveSourceUrl || isSavingToSource}>
                 {isSavingToSource ? '保存中...' : '保存到 S3'}
-              </button>
-              <button type="button" className="mandala-action is-muted" onClick={handleSourceClear}>
-                清空
               </button>
             </div>
             {querySourceUrl ? (
@@ -2823,7 +2837,18 @@ function App() {
                                             key={gridItem.type === 'center' ? `${activeDrillPath.join('-')}-self-center` : `${activeDrillPath.join('-')}-self-${gridItem.actionId}`}
                                             className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
                                           >
-                                            {isVisible && <p className="ow64-mini-text">{content.title}</p>}
+                                            {isVisible && (
+                                              <>
+                                                <p className="ow64-mini-text" title={content.title}>
+                                                  {content.title}
+                                                </p>
+                                                {content.subtitle.trim() && (
+                                                  <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                    {content.subtitle}
+                                                  </p>
+                                                )}
+                                              </>
+                                            )}
                                           </div>
                                         )
                                       })}
@@ -2871,7 +2896,18 @@ function App() {
                                           key={gridItem.type === 'center' ? `${activeDrillPath.join('-')}-${actionId}-center` : `${activeDrillPath.join('-')}-${actionId}-${gridItem.actionId}`}
                                           className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
                                         >
-                                          {isVisible && <p className="ow64-mini-text">{content.title}</p>}
+                                          {isVisible && (
+                                            <>
+                                              <p className="ow64-mini-text" title={content.title}>
+                                                {content.title}
+                                              </p>
+                                              {content.subtitle.trim() && (
+                                                <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                  {content.subtitle}
+                                                </p>
+                                              )}
+                                            </>
+                                          )}
                                         </div>
                                       )
                                     })}
@@ -2916,7 +2952,18 @@ function App() {
                                             key={`root-${cell.id}`}
                                             className={`ow64-mini-cell ${cell.id === 'objective' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
                                           >
-                                            {isVisible && <p className="ow64-mini-text">{content.title}</p>}
+                                            {isVisible && (
+                                              <>
+                                                <p className="ow64-mini-text" title={content.title}>
+                                                  {content.title}
+                                                </p>
+                                                {content.subtitle.trim() && (
+                                                  <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                    {content.subtitle}
+                                                  </p>
+                                                )}
+                                              </>
+                                            )}
                                           </div>
                                         )
                                       })}
@@ -2967,7 +3014,18 @@ function App() {
                                           key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
                                           className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
                                         >
-                                          {isVisible && <p className="ow64-mini-text">{content.title}</p>}
+                                          {isVisible && (
+                                            <>
+                                              <p className="ow64-mini-text" title={content.title}>
+                                                {content.title}
+                                              </p>
+                                              {content.subtitle.trim() && (
+                                                <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                  {content.subtitle}
+                                                </p>
+                                              )}
+                                            </>
+                                          )}
                                         </div>
                                       )
                                     })}
