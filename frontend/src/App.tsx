@@ -1673,6 +1673,7 @@ function App() {
   const [querySourceUrl, setQuerySourceUrl] = useState<string | null>(() => getSourceUrlFromSearchParams())
   const [sourceLoadFeedback, setSourceLoadFeedback] = useState('')
   const [isSavingToSource, setIsSavingToSource] = useState(false)
+  const [isDragEnabled, setIsDragEnabled] = useState(false)
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -2229,6 +2230,10 @@ function App() {
   }
 
   const handleCardDragStart = (event: DragEvent<HTMLElement>, target: DraggableCardTarget) => {
+    if (!isDragEnabled) {
+      return
+    }
+
     setDragSourceTarget(target)
     setDragOverKey(null)
     event.dataTransfer.effectAllowed = 'move'
@@ -2252,6 +2257,7 @@ function App() {
     event.preventDefault()
 
     const source = dragSourceTarget
+    let didSwap = false
     setDragOverKey(null)
     setDragSourceTarget(null)
 
@@ -2276,6 +2282,8 @@ function App() {
         return prev
       }
 
+      didSwap = true
+
       const next = {
         ...prev,
         [selectedProjectId]: updatedBoard,
@@ -2284,9 +2292,26 @@ function App() {
       persistOw64Board(selectedProjectId, updatedBoard)
       return next
     })
+
+    if (didSwap) {
+      setIsDragEnabled(false)
+    }
   }
 
   const handleCardDragEnd = () => {
+    setDragSourceTarget(null)
+    setDragOverKey(null)
+  }
+
+  const handleToggleDragMode = () => {
+    if (isDragEnabled) {
+      setIsDragEnabled(false)
+      setDragSourceTarget(null)
+      setDragOverKey(null)
+      return
+    }
+
+    setIsDragEnabled(true)
     setDragSourceTarget(null)
     setDragOverKey(null)
   }
@@ -3089,9 +3114,9 @@ function App() {
                             return (
                               <article
                                 key={cell.id}
-                                className={`mandala-cell has-drill-action is-draggable ${isRootDragOver ? 'is-drag-over' : ''} ${isRootDragSource ? 'is-drag-source' : ''}`}
+                                className={`mandala-cell has-drill-action ${isDragEnabled ? 'is-draggable' : ''} ${isRootDragOver ? 'is-drag-over' : ''} ${isRootDragSource ? 'is-drag-source' : ''}`}
                                 aria-label={`${cell.marker} ${content.title}`}
-                                draggable
+                                draggable={isDragEnabled}
                                 onDragStart={(event) => handleCardDragStart(event, rootDragTarget as DraggableCardTarget)}
                                 onDragOver={(event) => handleCardDragOver(event, rootDragTarget as DraggableCardTarget)}
                                 onDrop={(event) => handleCardDrop(event, rootDragTarget as DraggableCardTarget)}
@@ -3159,7 +3184,23 @@ function App() {
                             <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
-                              <div className="mandala-cell-actions">
+                                <div className="mandala-cell-actions">
+                                <button
+                                  type="button"
+                                  className={`mandala-cell-action is-icon ${isDragEnabled ? 'is-primary' : ''}`}
+                                  onClick={handleToggleDragMode}
+                                  title={isDragEnabled ? '关闭拖拽' : '开启拖拽'}
+                                  aria-label={isDragEnabled ? '关闭拖拽' : '开启拖拽'}
+                                >
+                                  <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                    <path d="M8 4L4 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M16 4L20 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M4 16L8 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M20 16L16 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M12 7V17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M7 12H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                  </svg>
+                                </button>
                                 <button
                                   type="button"
                                   className="mandala-cell-action is-primary is-icon"
@@ -3271,6 +3312,22 @@ function App() {
                                 <h2 className="mandala-title">{centerContent.title}</h2>
                                 <p className="mandala-subtitle">{centerContent.subtitle}</p>
                                 <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className={`mandala-cell-action is-icon ${isDragEnabled ? 'is-primary' : ''}`}
+                                    onClick={handleToggleDragMode}
+                                    title={isDragEnabled ? '关闭拖拽' : '开启拖拽'}
+                                    aria-label={isDragEnabled ? '关闭拖拽' : '开启拖拽'}
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M8 4L4 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M16 4L20 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M4 16L8 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M20 16L16 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M12 7V17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M7 12H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    </svg>
+                                  </button>
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-primary is-icon"
@@ -3417,9 +3474,9 @@ function App() {
                           return (
                             <article
                               key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
-                              className={`mandala-cell has-drill-action is-draggable ${isActionDragOver ? 'is-drag-over' : ''} ${isActionDragSource ? 'is-drag-source' : ''}`}
+                              className={`mandala-cell has-drill-action ${isDragEnabled ? 'is-draggable' : ''} ${isActionDragOver ? 'is-drag-over' : ''} ${isActionDragSource ? 'is-drag-source' : ''}`}
                               aria-label={`${marker} ${actionContent.title}`}
-                              draggable
+                              draggable={isDragEnabled}
                               onDragStart={(event) => handleCardDragStart(event, actionDragTarget)}
                               onDragOver={(event) => handleCardDragOver(event, actionDragTarget)}
                               onDrop={(event) => handleCardDrop(event, actionDragTarget)}
