@@ -3192,12 +3192,17 @@ function App() {
                               <div className="mandala-cell-actions">
                                 <button
                                   type="button"
-                                  className="mandala-cell-action is-primary"
+                                  className="mandala-cell-action is-primary is-icon"
                                   onClick={() => handleMandalaLayerChange('overview')}
                                   title="切换到 OW64 全景"
                                   aria-label="切换到 OW64 全景"
                                 >
-                                  OW64
+                                  <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                    <path d="M4 9V4H9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M15 4H20V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M20 15V20H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M9 20H4V15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
                                 </button>
                                 <button
                                   type="button"
@@ -3298,12 +3303,17 @@ function App() {
                                 <div className="mandala-cell-actions">
                                   <button
                                     type="button"
-                                    className="mandala-cell-action is-primary"
+                                    className="mandala-cell-action is-primary is-icon"
                                     onClick={() => handleMandalaLayerChange('overview')}
                                     title="切换到 OW64 全景"
                                     aria-label="切换到 OW64 全景"
                                   >
-                                    OW64
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M4 9V4H9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M15 4H20V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M20 15V20H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      <path d="M9 20H4V15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
                                   </button>
                                   <button
                                     type="button"
