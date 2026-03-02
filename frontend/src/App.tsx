@@ -2826,7 +2826,7 @@ function App() {
                                             >
                                               {isVisible && (
                                                 <>
-                                                  <p className="ow64-mini-text" title={content.title}>
+                                                  <p className="ow64-mini-text is-core-title" title={content.title}>
                                                     {content.title}
                                                   </p>
                                                   {isCenterCell && content.subtitle.trim() && (
@@ -2892,7 +2892,7 @@ function App() {
                                           >
                                             {isVisible && (
                                               <>
-                                                <p className="ow64-mini-text" title={content.title}>
+                                                <p className="ow64-mini-text is-core-title" title={content.title}>
                                                   {content.title}
                                                 </p>
                                                 {isCenterCell && content.subtitle.trim() && (
@@ -2954,7 +2954,7 @@ function App() {
                                             >
                                               {isVisible && (
                                                 <>
-                                                  <p className="ow64-mini-text" title={content.title}>
+                                                  <p className="ow64-mini-text is-core-title" title={content.title}>
                                                     {content.title}
                                                   </p>
                                                   {isCenterCell && content.subtitle.trim() && (
@@ -3023,7 +3023,7 @@ function App() {
                                           >
                                             {isVisible && (
                                               <>
-                                                <p className="ow64-mini-text" title={content.title}>
+                                                <p className="ow64-mini-text is-core-title" title={content.title}>
                                                   {content.title}
                                                 </p>
                                                 {isCenterCell && content.subtitle.trim() && (
