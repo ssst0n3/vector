@@ -3114,7 +3114,7 @@ function App() {
                             return (
                               <article
                                 key={cell.id}
-                                className={`mandala-cell has-drill-action ${isDragEnabled ? 'is-draggable' : ''} ${isRootDragOver ? 'is-drag-over' : ''} ${isRootDragSource ? 'is-drag-source' : ''}`}
+                                className={`mandala-cell has-drill-action ${isDragEnabled ? 'is-draggable is-drag-enabled' : ''} ${isRootDragOver ? 'is-drag-over' : ''} ${isRootDragSource ? 'is-drag-source' : ''}`}
                                 aria-label={`${cell.marker} ${content.title}`}
                                 draggable={isDragEnabled}
                                 onDragStart={(event) => handleCardDragStart(event, rootDragTarget as DraggableCardTarget)}
@@ -3184,7 +3184,8 @@ function App() {
                             <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
                               <h2 className="mandala-title">{content.title}</h2>
                               <p className="mandala-subtitle">{content.subtitle}</p>
-                                <div className="mandala-cell-actions">
+                              {isDragEnabled && <p className="mandala-hint">拖拽已开启：可交换同层卡片（一次后自动关闭）</p>}
+                              <div className="mandala-cell-actions">
                                 <button
                                   type="button"
                                   className={`mandala-cell-action is-icon ${isDragEnabled ? 'is-primary' : ''}`}
@@ -3311,6 +3312,7 @@ function App() {
                               <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${centerContent.title}`}>
                                 <h2 className="mandala-title">{centerContent.title}</h2>
                                 <p className="mandala-subtitle">{centerContent.subtitle}</p>
+                                {isDragEnabled && <p className="mandala-hint">拖拽已开启：可交换同层卡片（一次后自动关闭）</p>}
                                 <div className="mandala-cell-actions">
                                   <button
                                     type="button"
@@ -3474,7 +3476,7 @@ function App() {
                           return (
                             <article
                               key={`${activeDrillPath.join('-')}-${gridItem.actionId}`}
-                              className={`mandala-cell has-drill-action ${isDragEnabled ? 'is-draggable' : ''} ${isActionDragOver ? 'is-drag-over' : ''} ${isActionDragSource ? 'is-drag-source' : ''}`}
+                              className={`mandala-cell has-drill-action ${isDragEnabled ? 'is-draggable is-drag-enabled' : ''} ${isActionDragOver ? 'is-drag-over' : ''} ${isActionDragSource ? 'is-drag-source' : ''}`}
                               aria-label={`${marker} ${actionContent.title}`}
                               draggable={isDragEnabled}
                               onDragStart={(event) => handleCardDragStart(event, actionDragTarget)}

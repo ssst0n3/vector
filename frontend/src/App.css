@@ -613,6 +613,11 @@
   cursor: grab;
 }
 
+.mandala-cell.is-drag-enabled {
+  border-color: color-mix(in srgb, #1b4332 44%, var(--border-strong) 56%);
+  background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 84%, #1b4332 16%), color-mix(in srgb, #f8f6f0 88%, #1b4332 12%));
+}
+
 .mandala-cell.is-draggable:active {
   cursor: grabbing;
 }
