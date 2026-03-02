@@ -2529,36 +2529,6 @@ function App() {
               {activeTab === 'mandala' && (
                 <section className="sidebar-section" aria-label="OW64 controls">
                   <p className="nav-title">OW64 Controls</p>
-                  <div className="mandala-layer-switch is-vertical" role="tablist" aria-label="OW64 views">
-                    <button
-                      type="button"
-                      role="tab"
-                      className={`layer-switch-item ${activeLayer === 'root' ? 'is-active' : ''}`}
-                      aria-selected={activeLayer === 'root'}
-                      onClick={() => handleMandalaLayerChange('root')}
-                    >
-                      OW9 主盘
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      className={`layer-switch-item ${activeLayer === 'overview' ? 'is-active' : ''}`}
-                      aria-selected={activeLayer === 'overview'}
-                      onClick={() => handleMandalaLayerChange('overview')}
-                    >
-                      OW64 全景
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      className={`layer-switch-item ${activeLayer === 'pillar' ? 'is-active' : ''}`}
-                      aria-selected={activeLayer === 'pillar'}
-                      onClick={() => handleMandalaLayerChange('pillar')}
-                    >
-                      下钻视图
-                    </button>
-                  </div>
-
                   <div className="mandala-toolbar-actions sidebar-mandala-actions">
                     {activeLayer === 'pillar' && activeDrillPath.length > 1 && (
                       <button type="button" className="ghost-button" onClick={handleBackOneLevel}>
