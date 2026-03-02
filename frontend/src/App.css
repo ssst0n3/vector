@@ -216,6 +216,7 @@
 .app-main.is-project-mandala {
   min-height: 0;
   padding: 0.6rem clamp(0.55rem, 1.1vw, 1rem);
+  overflow: hidden;
 }
 
 .focus-summary {
@@ -249,6 +250,7 @@
 
 .app-main.is-project-mandala .focus-content {
   padding: 0;
+  overflow: hidden;
 }
 
 .content-header {
@@ -514,6 +516,7 @@
   flex: 1;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .mandala-toolbar-actions {
@@ -584,24 +587,25 @@
 .ow64-overview-scroll {
   flex: 1;
   min-height: 0;
-  overflow-x: auto;
-  overflow-y: auto;
-  padding-bottom: 0.4rem;
+  overflow: hidden;
+  padding-bottom: 0;
 }
 
 .ow64-overview-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: 0.9rem;
-  min-width: 860px;
-  min-height: 100%;
+  gap: clamp(0.3rem, 0.8vw, 0.72rem);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .ow64-overview-panel {
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  padding: 0.8rem;
+  padding: clamp(0.45rem, 0.9vw, 0.72rem);
   background: linear-gradient(135deg, #fffdf8, #f8f6f0);
   box-shadow: var(--shadow-soft);
   display: flex;
@@ -650,25 +654,34 @@
 
 .ow64-mini-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: 0.38rem;
+  grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.32fr) minmax(0, 0.84fr);
+  grid-template-rows: minmax(0, 0.84fr) minmax(0, 1.32fr) minmax(0, 0.84fr);
+  gap: clamp(0.18rem, 0.45vw, 0.34rem);
   flex: 1;
   min-height: 0;
 }
 
 .ow64-mini-cell {
   min-height: 0;
+  width: 100%;
   height: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  padding: 0.35rem;
+  padding: clamp(0.2rem, 0.48vw, 0.34rem);
   background: #fffdf8;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
+  gap: clamp(0.12rem, 0.3vw, 0.22rem);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.ow64-mini-cell:not(.is-core) {
+  width: 90%;
+  height: 90%;
+  justify-self: center;
+  align-self: center;
 }
 
 .ow64-mini-cell-trigger {
@@ -715,8 +728,10 @@
 }
 
 .ow64-mini-cell.is-core {
+  padding: clamp(0.34rem, 0.84vw, 0.56rem);
   border-color: #1b4332;
   background: rgba(27, 67, 50, 0.12);
+  box-shadow: 0 6px 14px rgba(27, 67, 50, 0.14);
 }
 
 .ow64-mini-marker {
@@ -728,22 +743,29 @@
 
 .ow64-mini-text {
   margin: 0;
-  font-size: 0.72rem;
-  line-height: 1.25;
+  max-width: 100%;
+  font-size: clamp(0.6rem, 0.72vw, 0.72rem);
+  line-height: 1.2;
   word-break: break-word;
+  overflow-wrap: anywhere;
   text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ow64-mini-subtitle {
   margin: 0;
   max-width: 100%;
-  font-size: 0.64rem;
+  font-size: clamp(0.54rem, 0.62vw, 0.64rem);
   line-height: 1.2;
   color: var(--text-muted);
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: left;
+  display: block;
+  white-space: pre-line;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .mandala-cell {
@@ -1190,6 +1212,35 @@
   .focus-content {
     padding-top: 0.25rem;
     padding-bottom: 0.75rem;
+  }
+
+  .ow64-overview-panel {
+    padding: 0.42rem;
+  }
+
+  .ow64-mini-grid {
+    gap: 0.16rem;
+  }
+
+  .ow64-mini-cell {
+    padding: 0.18rem;
+  }
+
+  .ow64-mini-cell:not(.is-core) {
+    width: 88%;
+    height: 88%;
+  }
+
+  .ow64-mini-cell.is-core {
+    box-shadow: 0 4px 10px rgba(27, 67, 50, 0.12);
+  }
+
+  .ow64-mini-text {
+    font-size: 0.58rem;
+  }
+
+  .ow64-mini-subtitle {
+    font-size: 0.52rem;
   }
 
   .app-main.is-project-mandala .mandala-cell {

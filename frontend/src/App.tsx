@@ -2537,10 +2537,10 @@ function App() {
                       </button>
                     )}
                     <button type="button" className="ghost-button" onClick={handleExportMarkdown}>
-                      导出 Markdown
+                      导出 md
                     </button>
                     <button type="button" className="ghost-button" onClick={handleImportMarkdownClick}>
-                      导入 Markdown
+                      导入 md
                     </button>
                     <input
                       ref={markdownFileInputRef}
@@ -2829,7 +2829,7 @@ function App() {
                                                   <p className="ow64-mini-text" title={content.title}>
                                                     {content.title}
                                                   </p>
-                                                  {content.subtitle.trim() && (
+                                                  {isCenterCell && content.subtitle.trim() && (
                                                     <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                       {content.subtitle}
                                                     </p>
@@ -2847,7 +2847,7 @@ function App() {
                                                   <p className="ow64-mini-text" title={content.title}>
                                                     {content.title}
                                                   </p>
-                                                  {content.subtitle.trim() && (
+                                                  {isCenterCell && content.subtitle.trim() && (
                                                     <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                       {content.subtitle}
                                                     </p>
@@ -2895,7 +2895,7 @@ function App() {
                                                 <p className="ow64-mini-text" title={content.title}>
                                                   {content.title}
                                                 </p>
-                                                {content.subtitle.trim() && (
+                                                {isCenterCell && content.subtitle.trim() && (
                                                   <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                     {content.subtitle}
                                                   </p>
@@ -2913,7 +2913,7 @@ function App() {
                                                 <p className="ow64-mini-text" title={content.title}>
                                                   {content.title}
                                                 </p>
-                                                {content.subtitle.trim() && (
+                                                {isCenterCell && content.subtitle.trim() && (
                                                   <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                     {content.subtitle}
                                                   </p>
@@ -2957,7 +2957,7 @@ function App() {
                                                   <p className="ow64-mini-text" title={content.title}>
                                                     {content.title}
                                                   </p>
-                                                  {content.subtitle.trim() && (
+                                                  {isCenterCell && content.subtitle.trim() && (
                                                     <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                       {content.subtitle}
                                                     </p>
@@ -2975,7 +2975,7 @@ function App() {
                                                   <p className="ow64-mini-text" title={content.title}>
                                                     {content.title}
                                                   </p>
-                                                  {content.subtitle.trim() && (
+                                                  {isCenterCell && content.subtitle.trim() && (
                                                     <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                       {content.subtitle}
                                                     </p>
@@ -3026,7 +3026,7 @@ function App() {
                                                 <p className="ow64-mini-text" title={content.title}>
                                                   {content.title}
                                                 </p>
-                                                {content.subtitle.trim() && (
+                                                {isCenterCell && content.subtitle.trim() && (
                                                   <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                     {content.subtitle}
                                                   </p>
@@ -3044,7 +3044,7 @@ function App() {
                                                 <p className="ow64-mini-text" title={content.title}>
                                                   {content.title}
                                                 </p>
-                                                {content.subtitle.trim() && (
+                                                {isCenterCell && content.subtitle.trim() && (
                                                   <p className="ow64-mini-subtitle" title={content.subtitle}>
                                                     {content.subtitle}
                                                   </p>
