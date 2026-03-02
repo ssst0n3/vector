@@ -604,6 +604,9 @@
   padding: 0.8rem;
   background: linear-gradient(135deg, #fffdf8, #f8f6f0);
   box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .ow64-overview-panel.is-center {
@@ -648,11 +651,15 @@
 .ow64-mini-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 0.38rem;
+  flex: 1;
+  min-height: 0;
 }
 
 .ow64-mini-cell {
-  min-height: 66px;
+  min-height: 0;
+  height: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   padding: 0.35rem;
@@ -662,6 +669,25 @@
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
+}
+
+.ow64-mini-cell-trigger {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.ow64-mini-cell-trigger:hover,
+.ow64-mini-cell-trigger:focus-visible {
+  border-color: #1b4332;
+  background: color-mix(in srgb, #1b4332 10%, #fffdf8);
+  color: var(--text-primary);
+}
+
+.ow64-mini-cell-trigger:disabled {
+  cursor: default;
 }
 
 .ow64-mini-cell.is-core {

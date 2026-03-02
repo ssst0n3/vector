@@ -2806,50 +2806,56 @@ function App() {
                               if (layoutItem.type === 'center') {
                                 return (
                                   <article key={`${activeDrillPath.join('-')}-center-overview`} className="ow64-overview-panel is-center">
-                                    <div className="ow64-overview-head">
-                                      <button
-                                        type="button"
-                                        className="ow64-open-button"
-                                        title="打开当前层九宫格"
-                                        aria-label="打开当前层九宫格"
-                                        onClick={() => handleMandalaLayerChange('pillar')}
-                                      >
-                                        <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
-                                          <path
-                                            d="M8 5L16 12L8 19"
-                                            stroke="currentColor"
-                                            strokeWidth="1.8"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
                                     <div className="ow64-mini-grid">
                                       {PILLAR_GRID_LAYOUT.map((gridItem) => {
                                         const content =
                                           gridItem.type === 'center' ? activeDrillNode.core : activeDrillNode.actions[gridItem.actionId]
                                         const isVisible =
                                           gridItem.type === 'center' ? true : activeDrillNode.visibleActions[gridItem.actionId]
+                                        const isCenterCell = gridItem.type === 'center'
 
                                         return (
-                                          <div
-                                            key={gridItem.type === 'center' ? `${activeDrillPath.join('-')}-self-center` : `${activeDrillPath.join('-')}-self-${gridItem.actionId}`}
-                                            className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
-                                          >
-                                            {isVisible && (
-                                              <>
-                                                <p className="ow64-mini-text" title={content.title}>
-                                                  {content.title}
-                                                </p>
-                                                {content.subtitle.trim() && (
-                                                  <p className="ow64-mini-subtitle" title={content.subtitle}>
-                                                    {content.subtitle}
+                                          isCenterCell ? (
+                                            <button
+                                              key={`${activeDrillPath.join('-')}-self-center`}
+                                              type="button"
+                                              className={`ow64-mini-cell ow64-mini-cell-trigger is-core ${isVisible ? '' : 'is-empty'}`}
+                                              title="打开当前层九宫格"
+                                              aria-label="打开当前层九宫格"
+                                              onClick={() => handleMandalaLayerChange('pillar')}
+                                            >
+                                              {isVisible && (
+                                                <>
+                                                  <p className="ow64-mini-text" title={content.title}>
+                                                    {content.title}
                                                   </p>
-                                                )}
-                                              </>
-                                            )}
-                                          </div>
+                                                  {content.subtitle.trim() && (
+                                                    <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                      {content.subtitle}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              )}
+                                            </button>
+                                          ) : (
+                                            <div
+                                              key={`${activeDrillPath.join('-')}-self-${gridItem.actionId}`}
+                                              className={`ow64-mini-cell ${isVisible ? '' : 'is-empty'}`}
+                                            >
+                                              {isVisible && (
+                                                <>
+                                                  <p className="ow64-mini-text" title={content.title}>
+                                                    {content.title}
+                                                  </p>
+                                                  {content.subtitle.trim() && (
+                                                    <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                      {content.subtitle}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              )}
+                                            </div>
+                                          )
                                         )
                                       })}
                                     </div>
@@ -2864,25 +2870,6 @@ function App() {
 
                               return (
                                 <article key={`${activeDrillPath.join('-')}-${actionId}-overview`} className="ow64-overview-panel">
-                                  <div className="ow64-overview-head">
-                                    <button
-                                      type="button"
-                                      className="ow64-open-button"
-                                      title={`打开下一层：${panelCore.title}`}
-                                      aria-label={`打开下一层 ${panelCore.title}`}
-                                      onClick={() => handleDrillDeeper(actionId)}
-                                    >
-                                      <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
-                                        <path
-                                          d="M8 5L16 12L8 19"
-                                          stroke="currentColor"
-                                          strokeWidth="1.8"
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                        />
-                                      </svg>
-                                    </button>
-                                  </div>
                                   <div className="ow64-mini-grid">
                                     {PILLAR_GRID_LAYOUT.map((gridItem) => {
                                       const content =
@@ -2890,67 +2877,36 @@ function App() {
                                       const isVisible =
                                         panelVisible &&
                                         (gridItem.type === 'center' ? true : panelChildNode.visibleActions[gridItem.actionId])
+                                      const isCenterCell = gridItem.type === 'center'
 
                                       return (
-                                        <div
-                                          key={gridItem.type === 'center' ? `${activeDrillPath.join('-')}-${actionId}-center` : `${activeDrillPath.join('-')}-${actionId}-${gridItem.actionId}`}
-                                          className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
-                                        >
-                                          {isVisible && (
-                                            <>
-                                              <p className="ow64-mini-text" title={content.title}>
-                                                {content.title}
-                                              </p>
-                                              {content.subtitle.trim() && (
-                                                <p className="ow64-mini-subtitle" title={content.subtitle}>
-                                                  {content.subtitle}
+                                        isCenterCell ? (
+                                          <button
+                                            key={`${activeDrillPath.join('-')}-${actionId}-center`}
+                                            type="button"
+                                            className={`ow64-mini-cell ow64-mini-cell-trigger is-core ${isVisible ? '' : 'is-empty'}`}
+                                            title={`打开下一层：${panelCore.title}`}
+                                            aria-label={`打开下一层 ${panelCore.title}`}
+                                            onClick={() => handleDrillDeeper(actionId)}
+                                            disabled={!isVisible}
+                                          >
+                                            {isVisible && (
+                                              <>
+                                                <p className="ow64-mini-text" title={content.title}>
+                                                  {content.title}
                                                 </p>
-                                              )}
-                                            </>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                </article>
-                              )
-                            })
-                          : OVERVIEW_GRID_LAYOUT.map((layoutCellId) => {
-                              if (layoutCellId === 'objective') {
-                                return (
-                                  <article key={layoutCellId} className="ow64-overview-panel is-center">
-                                    <div className="ow64-overview-head">
-                                      <button
-                                        type="button"
-                                        className="ow64-open-button"
-                                        title="打开主盘"
-                                        aria-label="打开主盘"
-                                        onClick={() => handleMandalaLayerChange('root')}
-                                      >
-                                        <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
-                                          <path
-                                            d="M8 5L16 12L8 19"
-                                            stroke="currentColor"
-                                            strokeWidth="1.8"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                          />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                    <div className="ow64-mini-grid">
-                                      {ROOT_CELLS.map((cell) => {
-                                        const target: EditingTarget =
-                                          cell.id === 'objective'
-                                            ? { scope: 'core' }
-                                            : { scope: 'pillar', pillarId: cell.id as PillarId }
-                                        const content = getContentByTarget(currentBoard, target)
-                                        const isVisible = cell.id === 'objective' ? true : currentBoard.visiblePillars[cell.id as PillarId]
-
-                                        return (
+                                                {content.subtitle.trim() && (
+                                                  <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                    {content.subtitle}
+                                                  </p>
+                                                )}
+                                              </>
+                                            )}
+                                          </button>
+                                        ) : (
                                           <div
-                                            key={`root-${cell.id}`}
-                                            className={`ow64-mini-cell ${cell.id === 'objective' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
+                                            key={`${activeDrillPath.join('-')}-${actionId}-${gridItem.actionId}`}
+                                            className={`ow64-mini-cell ${isVisible ? '' : 'is-empty'}`}
                                           >
                                             {isVisible && (
                                               <>
@@ -2966,6 +2922,69 @@ function App() {
                                             )}
                                           </div>
                                         )
+                                      )
+                                    })}
+                                  </div>
+                                </article>
+                              )
+                            })
+                          : OVERVIEW_GRID_LAYOUT.map((layoutCellId) => {
+                              if (layoutCellId === 'objective') {
+                                return (
+                                  <article key={layoutCellId} className="ow64-overview-panel is-center">
+                                    <div className="ow64-mini-grid">
+                                      {ROOT_CELLS.map((cell) => {
+                                        const target: EditingTarget =
+                                          cell.id === 'objective'
+                                            ? { scope: 'core' }
+                                            : { scope: 'pillar', pillarId: cell.id as PillarId }
+                                        const content = getContentByTarget(currentBoard, target)
+                                        const isVisible = cell.id === 'objective' ? true : currentBoard.visiblePillars[cell.id as PillarId]
+                                        const isCenterCell = cell.id === 'objective'
+
+                                        return (
+                                          isCenterCell ? (
+                                            <button
+                                              key={`root-${cell.id}`}
+                                              type="button"
+                                              className={`ow64-mini-cell ow64-mini-cell-trigger is-core ${isVisible ? '' : 'is-empty'}`}
+                                              title="打开主盘"
+                                              aria-label="打开主盘"
+                                              onClick={() => handleMandalaLayerChange('root')}
+                                            >
+                                              {isVisible && (
+                                                <>
+                                                  <p className="ow64-mini-text" title={content.title}>
+                                                    {content.title}
+                                                  </p>
+                                                  {content.subtitle.trim() && (
+                                                    <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                      {content.subtitle}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              )}
+                                            </button>
+                                          ) : (
+                                            <div
+                                              key={`root-${cell.id}`}
+                                              className={`ow64-mini-cell ${isVisible ? '' : 'is-empty'}`}
+                                            >
+                                              {isVisible && (
+                                                <>
+                                                  <p className="ow64-mini-text" title={content.title}>
+                                                    {content.title}
+                                                  </p>
+                                                  {content.subtitle.trim() && (
+                                                    <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                      {content.subtitle}
+                                                    </p>
+                                                  )}
+                                                </>
+                                              )}
+                                            </div>
+                                          )
+                                        )
                                       })}
                                     </div>
                                   </article>
@@ -2975,25 +2994,6 @@ function App() {
                               const pillarId = layoutCellId as PillarId
                               return (
                                 <article key={pillarId} className="ow64-overview-panel">
-                                  <div className="ow64-overview-head">
-                                    <button
-                                      type="button"
-                                      className="ow64-open-button"
-                                      title={`打开 ${PILLAR_META[pillarId].marker} 行动盘`}
-                                      aria-label={`打开 ${PILLAR_META[pillarId].marker} 行动盘`}
-                                      onClick={() => handleOpenPillar(pillarId)}
-                                    >
-                                      <svg aria-hidden="true" className="project-tool-icon" viewBox="0 0 24 24" fill="none">
-                                        <path
-                                          d="M8 5L16 12L8 19"
-                                          stroke="currentColor"
-                                          strokeWidth="1.8"
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                        />
-                                      </svg>
-                                    </button>
-                                  </div>
                                   <div className="ow64-mini-grid">
                                     {PILLAR_GRID_LAYOUT.map((gridItem) => {
                                       const target: EditingTarget =
@@ -3008,25 +3008,51 @@ function App() {
                                       const isVisible =
                                         pillarVisible &&
                                         (gridItem.type === 'center' ? true : currentBoard.drills[pillarId].visibleActions[gridItem.actionId])
+                                      const isCenterCell = gridItem.type === 'center'
 
                                       return (
-                                        <div
-                                          key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
-                                          className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
-                                        >
-                                          {isVisible && (
-                                            <>
-                                              <p className="ow64-mini-text" title={content.title}>
-                                                {content.title}
-                                              </p>
-                                              {content.subtitle.trim() && (
-                                                <p className="ow64-mini-subtitle" title={content.subtitle}>
-                                                  {content.subtitle}
+                                        isCenterCell ? (
+                                          <button
+                                            key={`${pillarId}-center`}
+                                            type="button"
+                                            className={`ow64-mini-cell ow64-mini-cell-trigger is-core ${isVisible ? '' : 'is-empty'}`}
+                                            title={`打开 ${PILLAR_META[pillarId].marker} 行动盘`}
+                                            aria-label={`打开 ${PILLAR_META[pillarId].marker} 行动盘`}
+                                            onClick={() => handleOpenPillar(pillarId)}
+                                            disabled={!isVisible}
+                                          >
+                                            {isVisible && (
+                                              <>
+                                                <p className="ow64-mini-text" title={content.title}>
+                                                  {content.title}
                                                 </p>
-                                              )}
-                                            </>
-                                          )}
-                                        </div>
+                                                {content.subtitle.trim() && (
+                                                  <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                    {content.subtitle}
+                                                  </p>
+                                                )}
+                                              </>
+                                            )}
+                                          </button>
+                                        ) : (
+                                          <div
+                                            key={`${pillarId}-${gridItem.actionId}`}
+                                            className={`ow64-mini-cell ${isVisible ? '' : 'is-empty'}`}
+                                          >
+                                            {isVisible && (
+                                              <>
+                                                <p className="ow64-mini-text" title={content.title}>
+                                                  {content.title}
+                                                </p>
+                                                {content.subtitle.trim() && (
+                                                  <p className="ow64-mini-subtitle" title={content.subtitle}>
+                                                    {content.subtitle}
+                                                  </p>
+                                                )}
+                                              </>
+                                            )}
+                                          </div>
+                                        )
                                       )
                                     })}
                                   </div>
