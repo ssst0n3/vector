@@ -732,6 +732,22 @@ const getSourceUrlFromSearchParams = (): string | null => {
   return src ? src : null
 }
 
+const syncSourceUrlToSearchParams = (source: string | null): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const url = new URL(window.location.href)
+  if (source) {
+    url.searchParams.set('src', source)
+  } else {
+    url.searchParams.delete('src')
+  }
+
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+  return getSourceUrlFromSearchParams()
+}
+
 const parseInitialProjectDataFromSource = (incoming: unknown): InitialProjectData | null => {
   if (!incoming || typeof incoming !== 'object') {
     return null
@@ -853,7 +869,6 @@ const createSourceDataAtUrl = async (source: string, data: InitialProjectData): 
   }
 }
 
-const URL_SOURCE_URL = getSourceUrlFromSearchParams()
 const CONFIGURED_SOURCE_URL = loadConfiguredSourceUrl()
 const INITIAL_PROJECT_DATA = loadInitialProjectDataFromLocalStorage()
 
@@ -1655,13 +1670,14 @@ function App() {
   const [markdownImportFeedback, setMarkdownImportFeedback] = useState('')
   const [sourceUrlDraft, setSourceUrlDraft] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
   const [configuredSourceUrl, setConfiguredSourceUrl] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
+  const [querySourceUrl, setQuerySourceUrl] = useState<string | null>(() => getSourceUrlFromSearchParams())
   const [sourceLoadFeedback, setSourceLoadFeedback] = useState('')
   const [isSavingToSource, setIsSavingToSource] = useState(false)
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const effectiveSourceUrl = URL_SOURCE_URL ?? (configuredSourceUrl.trim() || null)
+  const effectiveSourceUrl = querySourceUrl ?? (configuredSourceUrl.trim() || null)
 
   const applyInitialProjectData = (data: InitialProjectData) => {
     setProjects(data.projects)
@@ -1698,7 +1714,7 @@ function App() {
       }
 
       const localData = loadInitialProjectDataFromLocalStorage()
-      if (sourceData.status === 'not-found' && !URL_SOURCE_URL) {
+      if (sourceData.status === 'not-found') {
         const created = await createSourceDataAtUrl(effectiveSourceUrl, localData)
         if (disposed) {
           return
@@ -1725,6 +1741,17 @@ function App() {
       disposed = true
     }
   }, [effectiveSourceUrl])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setQuerySourceUrl(getSourceUrlFromSearchParams())
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
 
   const selectedProject = useMemo(
     () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
@@ -1770,7 +1797,8 @@ function App() {
       persistConfiguredSourceUrl(normalizedSource)
       setConfiguredSourceUrl(normalizedSource)
       setSourceUrlDraft(normalizedSource)
-      setSourceLoadFeedback(URL_SOURCE_URL ? '已保存地址。当前仍优先使用 URL 的 src 参数。' : '')
+      setQuerySourceUrl(syncSourceUrlToSearchParams(normalizedSource))
+      setSourceLoadFeedback('已保存地址并同步到 URL 的 src 参数。')
     } catch {
       setSourceLoadFeedback('地址无效，请输入可访问的 S3 JSON URL。')
     }
@@ -1780,7 +1808,8 @@ function App() {
     persistConfiguredSourceUrl(null)
     setConfiguredSourceUrl('')
     setSourceUrlDraft('')
-    setSourceLoadFeedback(URL_SOURCE_URL ? '已清空页面配置。当前仍优先使用 URL 的 src 参数。' : '')
+    setQuerySourceUrl(syncSourceUrlToSearchParams(null))
+    setSourceLoadFeedback('已清空页面配置，并移除 URL 的 src 参数。')
   }
 
   const handleSaveToSource = async () => {
@@ -1799,7 +1828,7 @@ function App() {
 
     const saved = await createSourceDataAtUrl(effectiveSourceUrl, dataToSave)
     if (saved) {
-      setSourceLoadFeedback(URL_SOURCE_URL ? '已保存到 URL src 指向的 S3 地址。' : '已保存到页面配置的 S3 地址。')
+      setSourceLoadFeedback(querySourceUrl ? '已保存到 URL src 指向的 S3 地址。' : '已保存到页面配置的 S3 地址。')
     } else {
       setSourceLoadFeedback('保存到 S3 失败，请检查地址权限、CORS 或签名配置。')
     }
@@ -2365,7 +2394,7 @@ function App() {
                 清空
               </button>
             </div>
-            {URL_SOURCE_URL ? (
+            {querySourceUrl ? (
               <p className="mandala-path sidebar-mandala-path">当前来源：URL src 参数（优先）</p>
             ) : configuredSourceUrl.trim() ? (
               <p className="mandala-path sidebar-mandala-path">当前来源：页面配置地址</p>
@@ -2807,22 +2836,21 @@ function App() {
                                   </button>
                                 </div>
                               <div className="ow64-mini-grid">
-                                  {ROOT_CELLS.filter((cell) => {
-                                    if (cell.id === 'objective') {
-                                      return true
-                                    }
-
-                                    return currentBoard.visiblePillars[cell.id as PillarId]
-                                  }).map((cell) => {
+                                  {ROOT_CELLS.map((cell) => {
                                     const target: EditingTarget =
                                       cell.id === 'objective'
                                         ? { scope: 'core' }
                                         : { scope: 'pillar', pillarId: cell.id as PillarId }
                                     const content = getContentByTarget(currentBoard, target)
+                                    const isVisible = cell.id === 'objective' ? true : currentBoard.visiblePillars[cell.id as PillarId]
+
                                     return (
-                                      <div key={`root-${cell.id}`} className={`ow64-mini-cell ${cell.id === 'objective' ? 'is-core' : ''}`}>
+                                      <div
+                                        key={`root-${cell.id}`}
+                                        className={`ow64-mini-cell ${cell.id === 'objective' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
+                                      >
                                         <span className="ow64-mini-marker">{cell.marker}</span>
-                                        <p className="ow64-mini-text">{content.title}</p>
+                                        {isVisible && <p className="ow64-mini-text">{content.title}</p>}
                                       </div>
                                     )
                                   })}
@@ -2841,47 +2869,32 @@ function App() {
                                 </button>
                               </div>
                               <div className="ow64-mini-grid">
-                                {(() => {
+                                {PILLAR_GRID_LAYOUT.map((gridItem) => {
+                                  const target: EditingTarget =
+                                    gridItem.type === 'center'
+                                      ? { scope: 'pillar', pillarId }
+                                      : { scope: 'drillCore', path: [pillarId] as DrillPath }
+                                  const marker =
+                                    gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
+                                  const content =
+                                    gridItem.type === 'center'
+                                      ? getContentByTarget(currentBoard, target)
+                                      : currentBoard.drills[pillarId].actions[gridItem.actionId]
                                   const pillarVisible = currentBoard.visiblePillars[pillarId]
-                                  const visibleMiniCells = PILLAR_GRID_LAYOUT.filter((gridItem) => {
-                                    if (!pillarVisible) {
-                                      return false
-                                    }
+                                  const isVisible =
+                                    pillarVisible &&
+                                    (gridItem.type === 'center' ? true : currentBoard.drills[pillarId].visibleActions[gridItem.actionId])
 
-                                    if (gridItem.type === 'center') {
-                                      return true
-                                    }
-
-                                    return currentBoard.drills[pillarId].visibleActions[gridItem.actionId]
-                                  }).map((gridItem) => {
-                                    const target: EditingTarget =
-                                      gridItem.type === 'center'
-                                        ? { scope: 'pillar', pillarId }
-                                        : { scope: 'drillCore', path: [pillarId] as DrillPath }
-                                    const marker =
-                                      gridItem.type === 'center' ? PILLAR_META[pillarId].marker : ACTION_META[gridItem.actionId].marker
-                                    const content =
-                                      gridItem.type === 'center'
-                                        ? getContentByTarget(currentBoard, target)
-                                        : currentBoard.drills[pillarId].actions[gridItem.actionId]
-
-                                    return (
-                                      <div
-                                        key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
-                                        className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''}`}
-                                      >
-                                        <span className="ow64-mini-marker">{marker}</span>
-                                        <p className="ow64-mini-text">{content.title}</p>
-                                      </div>
-                                    )
-                                  })
-
-                                  if (visibleMiniCells.length === 0) {
-                                    return <p className="ow64-mini-text">暂无可展示卡片</p>
-                                  }
-
-                                  return visibleMiniCells
-                                })()}
+                                  return (
+                                    <div
+                                      key={gridItem.type === 'center' ? `${pillarId}-center` : `${pillarId}-${gridItem.actionId}`}
+                                      className={`ow64-mini-cell ${gridItem.type === 'center' ? 'is-core' : ''} ${isVisible ? '' : 'is-empty'}`}
+                                    >
+                                      <span className="ow64-mini-marker">{marker}</span>
+                                      {isVisible && <p className="ow64-mini-text">{content.title}</p>}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </article>
                           )
