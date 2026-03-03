@@ -1875,6 +1875,120 @@ const getDraggableCardKey = (target: DraggableCardTarget): string => {
   return `drill:${target.path.join('>')}:${target.actionId}`
 }
 
+const swapPillarId = (pillarId: PillarId, left: PillarId, right: PillarId): PillarId => {
+  if (pillarId === left) {
+    return right
+  }
+
+  if (pillarId === right) {
+    return left
+  }
+
+  return pillarId
+}
+
+const remapTaskTargetForRootSwap = (taskTarget: EditingTarget, left: PillarId, right: PillarId): EditingTarget => {
+  if (taskTarget.scope === 'core') {
+    return taskTarget
+  }
+
+  if (taskTarget.scope === 'pillar') {
+    return {
+      ...taskTarget,
+      pillarId: swapPillarId(taskTarget.pillarId, left, right),
+    }
+  }
+
+  const nextPillarId = swapPillarId(taskTarget.path[0], left, right)
+  if (nextPillarId === taskTarget.path[0]) {
+    return taskTarget
+  }
+
+  const nextPath = [nextPillarId, ...taskTarget.path.slice(1)] as DrillPath
+  if (taskTarget.scope === 'drillCore') {
+    return {
+      ...taskTarget,
+      path: nextPath,
+    }
+  }
+
+  return {
+    ...taskTarget,
+    path: nextPath,
+  }
+}
+
+const isPathPrefix = (prefix: DrillPath, full: DrillPath): boolean => {
+  if (prefix.length > full.length) {
+    return false
+  }
+
+  return prefix.every((segment, index) => segment === full[index])
+}
+
+const remapDrillPathForActionSwap = (
+  path: DrillPath,
+  parentPath: DrillPath,
+  left: ActionId,
+  right: ActionId,
+): DrillPath => {
+  if (!isPathPrefix(parentPath, path)) {
+    return path
+  }
+
+  const swapDepth = parentPath.length
+  if (path.length <= swapDepth) {
+    return path
+  }
+
+  const branchAction = path[swapDepth]
+  if (branchAction !== left && branchAction !== right) {
+    return path
+  }
+
+  const swappedAction = branchAction === left ? right : left
+  const next = [...path]
+  next[swapDepth] = swappedAction
+  return next as DrillPath
+}
+
+const remapTaskTargetForActionSwap = (
+  taskTarget: EditingTarget,
+  parentPath: DrillPath,
+  left: ActionId,
+  right: ActionId,
+): EditingTarget => {
+  if (taskTarget.scope === 'core' || taskTarget.scope === 'pillar') {
+    return taskTarget
+  }
+
+  if (taskTarget.scope === 'drillCore') {
+    const nextPath = remapDrillPathForActionSwap(taskTarget.path, parentPath, left, right)
+    if (nextPath === taskTarget.path) {
+      return taskTarget
+    }
+
+    return {
+      ...taskTarget,
+      path: nextPath,
+    }
+  }
+
+  const nextPath = remapDrillPathForActionSwap(taskTarget.path, parentPath, left, right)
+  const shouldSwapSelfSlot = isSamePath(taskTarget.path, parentPath) && (taskTarget.actionId === left || taskTarget.actionId === right)
+  const nextActionId = shouldSwapSelfSlot ? (taskTarget.actionId === left ? right : left) : taskTarget.actionId
+
+  if (nextPath === taskTarget.path && nextActionId === taskTarget.actionId) {
+    return taskTarget
+  }
+
+  return {
+    ...taskTarget,
+    path: nextPath,
+    actionId: nextActionId,
+  }
+}
+
 const swapRootPillars = (board: Ow64Board, left: PillarId, right: PillarId): Ow64Board => {
   if (left === right) {
     return board
@@ -2610,6 +2724,10 @@ function App() {
   const [taskDrawerTarget, setTaskDrawerTarget] = useState<EditingTarget | null>(null)
   const [taskDraftTitle, setTaskDraftTitle] = useState('')
   const [taskDraftDescription, setTaskDraftDescription] = useState('')
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [editingTaskTitle, setEditingTaskTitle] = useState('')
+  const [editingTaskDescription, setEditingTaskDescription] = useState('')
+  const [retargetTaskId, setRetargetTaskId] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const effectiveS3SourceUrl = configuredS3SourceUrl.trim() || null
@@ -2707,6 +2825,10 @@ function App() {
     setTaskDrawerTarget(null)
     setTaskDraftTitle('')
     setTaskDraftDescription('')
+    setEditingTaskId(null)
+    setEditingTaskTitle('')
+    setEditingTaskDescription('')
+    setRetargetTaskId(null)
     setActiveLayer('root')
     setDrillPath(null)
   }
@@ -2922,6 +3044,13 @@ function App() {
     const key = toTargetKey(taskDrawerTarget)
     return selectedProjectTasks.filter((task) => toTargetKey(task.linkedTarget) === key)
   }, [selectedProjectTasks, taskDrawerTarget])
+  const retargetTask = useMemo(() => {
+    if (!retargetTaskId) {
+      return null
+    }
+
+    return selectedProjectTasks.find((task) => task.id === retargetTaskId) ?? null
+  }, [retargetTaskId, selectedProjectTasks])
   const getTaskStatsForTarget = (target: EditingTarget): { total: number; pending: number } => {
     return taskStatsByTargetKey.get(toTargetKey(target)) ?? { total: 0, pending: 0 }
   }
@@ -3111,6 +3240,8 @@ function App() {
   const handleViewChange = (nextView: ViewMode) => {
     resetEditingDraft()
     handleCloseTaskDrawer()
+    resetTaskEditingDraft()
+    setRetargetTaskId(null)
     resetMandalaLayer()
     resetProjectDraft()
     setView(nextView)
@@ -3119,6 +3250,10 @@ function App() {
   const handleTabChange = (tabId: ProjectTabId) => {
     resetEditingDraft()
     handleCloseTaskDrawer()
+    resetTaskEditingDraft()
+    if (tabId !== 'mandala') {
+      setRetargetTaskId(null)
+    }
     resetProjectDraft()
     if (tabId !== 'mandala') {
       resetMandalaLayer()
@@ -3129,6 +3264,8 @@ function App() {
   const handleProjectEnter = (projectId: ProjectId) => {
     resetEditingDraft()
     handleCloseTaskDrawer()
+    resetTaskEditingDraft()
+    setRetargetTaskId(null)
     resetMandalaLayer()
     resetProjectDraft()
     setSelectedProjectId(projectId)
@@ -3218,6 +3355,9 @@ function App() {
   }
 
   const handleProjectDelete = (projectId: ProjectId) => {
+    resetTaskEditingDraft()
+    setRetargetTaskId(null)
+
     const nextProjects = projects.filter((project) => project.id !== projectId)
     setProjects(nextProjects)
     persistProjectList(nextProjects)
@@ -3268,12 +3408,109 @@ function App() {
     setTaskDrawerTarget(target)
     setTaskDraftTitle('')
     setTaskDraftDescription('')
+    setEditingTaskId(null)
+    setEditingTaskTitle('')
+    setEditingTaskDescription('')
+  }
+
+  function resetTaskEditingDraft() {
+    setEditingTaskId(null)
+    setEditingTaskTitle('')
+    setEditingTaskDescription('')
   }
 
   const handleCloseTaskDrawer = () => {
     setTaskDrawerTarget(null)
     setTaskDraftTitle('')
     setTaskDraftDescription('')
+    resetTaskEditingDraft()
+  }
+
+  const handleTaskEditStart = (task: TaskItem) => {
+    setEditingTaskId(task.id)
+    setEditingTaskTitle(task.title)
+    setEditingTaskDescription(task.description)
+  }
+
+  const handleTaskEditCancel = () => {
+    resetTaskEditingDraft()
+  }
+
+  const handleTaskEditSave = () => {
+    if (!editingTaskId) {
+      return
+    }
+
+    const trimmedTitle = editingTaskTitle.trim()
+    if (!trimmedTitle) {
+      return
+    }
+
+    const nextDescription = editingTaskDescription.trim()
+    const now = new Date().toISOString()
+
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id !== editingTaskId) {
+          return task
+        }
+
+        if (task.title === trimmedTitle && task.description === nextDescription) {
+          return task
+        }
+
+        return {
+          ...task,
+          title: trimmedTitle,
+          description: nextDescription,
+          updatedAt: now,
+        }
+      }),
+    )
+
+    resetTaskEditingDraft()
+  }
+
+  const handleTaskRetargetStart = (taskId: string) => {
+    setRetargetTaskId(taskId)
+    setActiveTab('mandala')
+    resetTaskEditingDraft()
+    setTaskDrawerTarget(null)
+    setTaskDraftTitle('')
+    setTaskDraftDescription('')
+  }
+
+  const handleTaskRetargetCancel = () => {
+    setRetargetTaskId(null)
+  }
+
+  const handleTaskRetargetApply = (target: EditingTarget) => {
+    if (!retargetTaskId) {
+      handleOpenTaskDrawer(target)
+      return
+    }
+
+    const now = new Date().toISOString()
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id !== retargetTaskId) {
+          return task
+        }
+
+        if (isSameTarget(task.linkedTarget, target)) {
+          return task
+        }
+
+        return {
+          ...task,
+          linkedTarget: target,
+          updatedAt: now,
+        }
+      }),
+    )
+
+    setRetargetTaskId(null)
+    handleOpenTaskDrawer(target)
   }
 
   const handleCreateTaskForDrawer = () => {
@@ -3321,6 +3558,14 @@ function App() {
   }
 
   const handleTaskDelete = (taskId: string) => {
+    if (editingTaskId === taskId) {
+      resetTaskEditingDraft()
+    }
+
+    if (retargetTaskId === taskId) {
+      setRetargetTaskId(null)
+    }
+
     setTasks((prev) => prev.filter((task) => task.id !== taskId))
   }
 
@@ -3617,6 +3862,44 @@ function App() {
     })
 
     if (didSwap) {
+      const remapTaskTarget = (taskTarget: EditingTarget): EditingTarget => {
+        if (source.scope === 'pillar' && target.scope === 'pillar') {
+          return remapTaskTargetForRootSwap(taskTarget, source.pillarId, target.pillarId)
+        }
+
+        if (source.scope === 'drillAction' && target.scope === 'drillAction') {
+          return remapTaskTargetForActionSwap(taskTarget, source.path, source.actionId, target.actionId)
+        }
+
+        return taskTarget
+      }
+
+      setTasks((prev) =>
+        prev.map((task) => {
+          if (task.projectId !== selectedProjectId) {
+            return task
+          }
+
+          const nextTarget = remapTaskTarget(task.linkedTarget)
+          if (isSameTarget(task.linkedTarget, nextTarget)) {
+            return task
+          }
+
+          return {
+            ...task,
+            linkedTarget: nextTarget,
+          }
+        }),
+      )
+
+      setTaskDrawerTarget((prev) => {
+        if (!prev) {
+          return prev
+        }
+
+        return remapTaskTarget(prev)
+      })
+
       setIsDragEnabled(false)
     }
   }
@@ -4183,6 +4466,16 @@ function App() {
             <>
               {activeTab === 'mandala' ? (
                 <section className="mandala-layout focus-content" aria-label="曼德拉九宫格 OW64">
+                  {retargetTask && (
+                    <div className="task-retarget-banner" role="status" aria-live="polite">
+                      <p className="task-retarget-text">
+                        正在为任务“{retargetTask.title}”选择新目标：请点击任意卡片右上角任务按钮。
+                      </p>
+                      <button type="button" className="mandala-action is-muted" onClick={handleTaskRetargetCancel}>
+                        取消改绑
+                      </button>
+                    </div>
+                  )}
                   {activeLayer === 'overview' ? (
                     <div className="ow64-overview-scroll">
                       <div className="ow64-overview-grid">
@@ -4561,7 +4854,7 @@ function App() {
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-icon"
-                                    onClick={() => handleOpenTaskDrawer(target)}
+                                    onClick={() => handleTaskRetargetApply(target)}
                                     title="关联任务"
                                     aria-label={`管理 ${cell.marker} 的关联任务`}
                                   >
@@ -4641,7 +4934,7 @@ function App() {
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-icon"
-                                    onClick={() => handleOpenTaskDrawer(target)}
+                                    onClick={() => handleTaskRetargetApply(target)}
                                     title="关联任务"
                                     aria-label={`管理 ${cell.marker} 的关联任务`}
                                   >
@@ -4781,7 +5074,7 @@ function App() {
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-icon"
-                                    onClick={() => handleOpenTaskDrawer(centerTarget)}
+                                    onClick={() => handleTaskRetargetApply(centerTarget)}
                                     title="关联任务"
                                     aria-label={`管理 ${marker} 的关联任务`}
                                   >
@@ -4975,7 +5268,7 @@ function App() {
                                 <button
                                   type="button"
                                   className="mandala-cell-action is-icon"
-                                  onClick={() => handleOpenTaskDrawer(actionTarget)}
+                                  onClick={() => handleTaskRetargetApply(actionTarget)}
                                   title="关联任务"
                                   aria-label={`管理 ${marker} 的关联任务`}
                                 >
@@ -5063,35 +5356,88 @@ function App() {
                       <ul className="task-list" aria-label="项目任务列表">
                         {selectedProjectTasks.map((task) => (
                           <li key={task.id} className="task-item">
-                            <div>
-                              <p className="task-item-title">{task.title}</p>
-                              {task.description && <p className="task-item-description">{task.description}</p>}
-                              <p className="mandala-path task-item-meta">关联目标：{getTargetDisplayLabel(task.linkedTarget)}</p>
-                            </div>
-                            <div className="task-item-actions">
-                              <select
-                                className="project-input task-status-select"
-                                value={task.status}
-                                onChange={(event) => handleTaskStatusChange(task.id, event.target.value as TaskStatus)}
-                                aria-label="更新任务状态"
-                              >
-                                {TASK_STATUS_OPTIONS.map((status) => (
-                                  <option key={status} value={status}>
-                                    {TASK_STATUS_LABEL[status]}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                className="mandala-action is-muted"
-                                onClick={() => handleNavigateToTaskTarget(task.linkedTarget)}
-                              >
-                                定位目标
-                              </button>
-                              <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
-                                删除
-                              </button>
-                            </div>
+                            {editingTaskId === task.id ? (
+                              <>
+                                <div className="task-edit-fields">
+                                  <input
+                                    className="project-input"
+                                    value={editingTaskTitle}
+                                    onChange={(event) => setEditingTaskTitle(event.target.value)}
+                                    placeholder="输入任务标题"
+                                    aria-label="编辑任务标题"
+                                    autoFocus
+                                  />
+                                  <textarea
+                                    className="project-input project-textarea"
+                                    value={editingTaskDescription}
+                                    onChange={(event) => setEditingTaskDescription(event.target.value)}
+                                    placeholder="输入任务描述（可选）"
+                                    aria-label="编辑任务描述"
+                                    rows={3}
+                                  />
+                                  <p className="mandala-path task-item-meta">关联目标：{getTargetDisplayLabel(task.linkedTarget)}</p>
+                                </div>
+                                <div className="task-item-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-action"
+                                    onClick={handleTaskEditSave}
+                                    disabled={!editingTaskTitle.trim()}
+                                  >
+                                    保存
+                                  </button>
+                                  <button type="button" className="mandala-action is-muted" onClick={handleTaskEditCancel}>
+                                    取消
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div>
+                                  <p className="task-item-title">{task.title}</p>
+                                  {task.description && <p className="task-item-description">{task.description}</p>}
+                                  <p className="mandala-path task-item-meta">关联目标：{getTargetDisplayLabel(task.linkedTarget)}</p>
+                                </div>
+                                <div className="task-item-actions">
+                                  <select
+                                    className="project-input task-status-select"
+                                    value={task.status}
+                                    onChange={(event) => handleTaskStatusChange(task.id, event.target.value as TaskStatus)}
+                                    aria-label="更新任务状态"
+                                  >
+                                    {TASK_STATUS_OPTIONS.map((status) => (
+                                      <option key={status} value={status}>
+                                        {TASK_STATUS_LABEL[status]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    className="mandala-action is-muted"
+                                    onClick={() => handleTaskEditStart(task)}
+                                  >
+                                    编辑
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-action is-muted"
+                                    onClick={() => handleTaskRetargetStart(task.id)}
+                                  >
+                                    更改目标
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="mandala-action is-muted"
+                                    onClick={() => handleNavigateToTaskTarget(task.linkedTarget)}
+                                  >
+                                    定位目标
+                                  </button>
+                                  <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
+                                    删除
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -5139,28 +5485,81 @@ function App() {
                     <ul className="task-list" aria-label="关联任务列表">
                       {activeTaskDrawerTasks.map((task) => (
                         <li key={task.id} className="task-item">
-                          <div>
-                            <p className="task-item-title">{task.title}</p>
-                            {task.description && <p className="task-item-description">{task.description}</p>}
-                            <p className="mandala-path task-item-meta">更新于 {new Date(task.updatedAt).toLocaleString()}</p>
-                          </div>
-                          <div className="task-item-actions">
-                            <select
-                              className="project-input task-status-select"
-                              value={task.status}
-                              onChange={(event) => handleTaskStatusChange(task.id, event.target.value as TaskStatus)}
-                              aria-label="更新任务状态"
-                            >
-                              {TASK_STATUS_OPTIONS.map((status) => (
-                                <option key={status} value={status}>
-                                  {TASK_STATUS_LABEL[status]}
-                                </option>
-                              ))}
-                            </select>
-                            <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
-                              删除
-                            </button>
-                          </div>
+                          {editingTaskId === task.id ? (
+                            <>
+                              <div className="task-edit-fields">
+                                <input
+                                  className="project-input"
+                                  value={editingTaskTitle}
+                                  onChange={(event) => setEditingTaskTitle(event.target.value)}
+                                  placeholder="输入任务标题"
+                                  aria-label="编辑任务标题"
+                                  autoFocus
+                                />
+                                <textarea
+                                  className="project-input project-textarea"
+                                  value={editingTaskDescription}
+                                  onChange={(event) => setEditingTaskDescription(event.target.value)}
+                                  placeholder="输入任务描述（可选）"
+                                  aria-label="编辑任务描述"
+                                  rows={3}
+                                />
+                                <p className="mandala-path task-item-meta">更新于 {new Date(task.updatedAt).toLocaleString()}</p>
+                              </div>
+                              <div className="task-item-actions">
+                                <button
+                                  type="button"
+                                  className="mandala-action"
+                                  onClick={handleTaskEditSave}
+                                  disabled={!editingTaskTitle.trim()}
+                                >
+                                  保存
+                                </button>
+                                <button type="button" className="mandala-action is-muted" onClick={handleTaskEditCancel}>
+                                  取消
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div>
+                                <p className="task-item-title">{task.title}</p>
+                                {task.description && <p className="task-item-description">{task.description}</p>}
+                                <p className="mandala-path task-item-meta">更新于 {new Date(task.updatedAt).toLocaleString()}</p>
+                              </div>
+                              <div className="task-item-actions">
+                                <select
+                                  className="project-input task-status-select"
+                                  value={task.status}
+                                  onChange={(event) => handleTaskStatusChange(task.id, event.target.value as TaskStatus)}
+                                  aria-label="更新任务状态"
+                                >
+                                  {TASK_STATUS_OPTIONS.map((status) => (
+                                    <option key={status} value={status}>
+                                      {TASK_STATUS_LABEL[status]}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="mandala-action is-muted"
+                                  onClick={() => handleTaskEditStart(task)}
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  type="button"
+                                  className="mandala-action is-muted"
+                                  onClick={() => handleTaskRetargetStart(task.id)}
+                                >
+                                  更改目标
+                                </button>
+                                <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
+                                  删除
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>
