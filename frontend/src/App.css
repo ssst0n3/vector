@@ -844,6 +844,9 @@
   background: linear-gradient(135deg, color-mix(in srgb, #fffdf8 99.5%, transparent), color-mix(in srgb, #faf8f2 99.5%, transparent));
   box-shadow: none;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mandala-cell.is-add:hover {
@@ -853,15 +856,16 @@
 }
 
 .mandala-add-button {
-  width: 100%;
-  height: 100%;
+  width: 2.6rem;
+  height: 2.6rem;
   border: 0;
+  border-radius: 999px;
   background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   color: color-mix(in srgb, var(--text-primary) 18%, var(--text-muted));
-  font-size: clamp(1.2rem, 2.1vw, 1.55rem);
+  font-size: clamp(1.3rem, 2.2vw, 1.65rem);
   font-weight: 300;
   opacity: 0.42;
   line-height: 1;
