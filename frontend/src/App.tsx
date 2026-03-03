@@ -157,6 +157,17 @@ type CsvRow = {
 
 type DataSourceType = 'local' | 's3' | 'gist'
 type RemoteSourceType = Exclude<DataSourceType, 'local'>
+type TaskStatus = 'todo' | 'doing' | 'done'
+
+type TaskItem = {
+  id: string
+  projectId: ProjectId
+  title: string
+  status: TaskStatus
+  linkedTarget: EditingTarget
+  createdAt: string
+  updatedAt: string
+}
 
 const ROW_TYPE_LABEL: Record<CsvRow['rowType'], string> = {
   'root-core': 'Root Core',
@@ -185,6 +196,7 @@ const DATA_SOURCE_S3_URL_STORAGE_KEY = 'ow64:data-source:s3:url'
 const DATA_SOURCE_GIST_URL_STORAGE_KEY = 'ow64:data-source:gist:url'
 const DATA_SOURCE_GIST_TOKEN_STORAGE_KEY = 'ow64:data-source:gist:token'
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ow64:sidebar:collapsed'
+const TASKS_STORAGE_KEY = 'ow64:tasks:v1'
 const DEFAULT_GIST_FILE_NAME = 'ow64-data.json'
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
@@ -223,12 +235,214 @@ const ACTION_ID_BY_MARKER = ACTION_LAYOUT.reduce(
   {} as Record<string, ActionId>,
 )
 
+const TASK_STATUS_OPTIONS: TaskStatus[] = ['todo', 'doing', 'done']
+
+const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
+  todo: '待办',
+  doing: '进行中',
+  done: '已完成',
+}
+
 const isSamePath = (left: DrillPath, right: DrillPath) => {
   if (left.length !== right.length) {
     return false
   }
 
   return left.every((segment, index) => segment === right[index])
+}
+
+const isPillarId = (value: string): value is PillarId => value in PILLAR_META
+
+const isActionId = (value: string): value is ActionId => value in ACTION_META
+
+const sanitizeDrillPath = (value: unknown): DrillPath | null => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+
+  const [first, ...rest] = value
+  if (typeof first !== 'string' || !isPillarId(first)) {
+    return null
+  }
+
+  const actionPath: ActionId[] = []
+  for (const segment of rest) {
+    if (typeof segment !== 'string' || !isActionId(segment)) {
+      return null
+    }
+    actionPath.push(segment)
+  }
+
+  return [first, ...actionPath]
+}
+
+const sanitizeEditingTarget = (value: unknown): EditingTarget | null => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const payload = value as Partial<{
+    scope: unknown
+    pillarId: unknown
+    path: unknown
+    actionId: unknown
+  }>
+
+  if (payload.scope === 'core') {
+    return { scope: 'core' }
+  }
+
+  if (payload.scope === 'pillar' && typeof payload.pillarId === 'string' && isPillarId(payload.pillarId)) {
+    return {
+      scope: 'pillar',
+      pillarId: payload.pillarId,
+    }
+  }
+
+  if (payload.scope === 'drillCore') {
+    const path = sanitizeDrillPath(payload.path)
+    if (!path) {
+      return null
+    }
+
+    return {
+      scope: 'drillCore',
+      path,
+    }
+  }
+
+  if (payload.scope === 'drillAction') {
+    const path = sanitizeDrillPath(payload.path)
+    if (!path || typeof payload.actionId !== 'string' || !isActionId(payload.actionId)) {
+      return null
+    }
+
+    return {
+      scope: 'drillAction',
+      path,
+      actionId: payload.actionId,
+    }
+  }
+
+  return null
+}
+
+const isTaskStatus = (value: unknown): value is TaskStatus => {
+  return typeof value === 'string' && TASK_STATUS_OPTIONS.includes(value as TaskStatus)
+}
+
+const sanitizeTaskItem = (value: unknown): TaskItem | null => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const payload = value as Partial<{
+    id: unknown
+    projectId: unknown
+    title: unknown
+    status: unknown
+    linkedTarget: unknown
+    createdAt: unknown
+    updatedAt: unknown
+  }>
+
+  if (typeof payload.id !== 'string' || !payload.id.trim()) {
+    return null
+  }
+
+  if (typeof payload.projectId !== 'string' || !payload.projectId.trim()) {
+    return null
+  }
+
+  if (typeof payload.title !== 'string' || !payload.title.trim()) {
+    return null
+  }
+
+  if (!isTaskStatus(payload.status)) {
+    return null
+  }
+
+  const linkedTarget = sanitizeEditingTarget(payload.linkedTarget)
+  if (!linkedTarget) {
+    return null
+  }
+
+  const now = new Date().toISOString()
+  return {
+    id: payload.id.trim(),
+    projectId: payload.projectId.trim(),
+    title: payload.title.trim(),
+    status: payload.status,
+    linkedTarget,
+    createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : now,
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : now,
+  }
+}
+
+const createTaskId = (): string => {
+  return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+const toTargetKey = (target: EditingTarget): string => {
+  if (target.scope === 'core') {
+    return 'core'
+  }
+
+  if (target.scope === 'pillar') {
+    return `pillar:${target.pillarId}`
+  }
+
+  if (target.scope === 'drillCore') {
+    if (target.path.length === 1) {
+      return `pillar:${target.path[0]}`
+    }
+
+    const parentPath = target.path.slice(0, -1) as DrillPath
+    const parentActionId = target.path[target.path.length - 1] as ActionId
+    return `drillAction:${parentPath.join('>')}:${parentActionId}`
+  }
+
+  return `drillAction:${target.path.join('>')}:${target.actionId}`
+}
+
+const getTargetLabel = (target: EditingTarget): string => {
+  if (target.scope === 'core') {
+    return 'O 中心目标'
+  }
+
+  if (target.scope === 'pillar') {
+    return PILLAR_META[target.pillarId].marker
+  }
+
+  if (target.scope === 'drillCore') {
+    return getMarkerByPath(target.path)
+  }
+
+  return `${getMarkerByPath(target.path)}-${ACTION_META[target.actionId].marker}`
+}
+
+const getTargetTitleFromBoard = (board: Ow64Board, target: EditingTarget): string => {
+  if (target.scope === 'core') {
+    return board.core.title.trim()
+  }
+
+  if (target.scope === 'pillar') {
+    return board.pillars[target.pillarId].title.trim()
+  }
+
+  if (target.scope === 'drillCore') {
+    if (target.path.length === 1) {
+      return board.pillars[target.path[0]].title.trim()
+    }
+
+    const parentPath = target.path.slice(0, -1) as DrillPath
+    const parentActionId = target.path[target.path.length - 1] as ActionId
+    const parentNode = getNodeByPath(board, parentPath)
+    return parentNode.actions[parentActionId].title.trim()
+  }
+
+  const currentNode = getNodeByPath(board, target.path)
+  return currentNode.actions[target.actionId].title.trim()
 }
 
 const getMarkerByPath = (path: DrillPath): string => {
@@ -614,6 +828,48 @@ const persistProjectList = (projects: ProjectItem[]) => {
   window.localStorage.setItem(PROJECT_LIST_STORAGE_KEY, JSON.stringify(projects))
 }
 
+const loadTasksFromLocalStorage = (): TaskItem[] => {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  const raw = window.localStorage.getItem(TASKS_STORAGE_KEY)
+  if (!raw) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    const deduped = new Set<string>()
+    const tasks: TaskItem[] = []
+    for (const item of parsed) {
+      const sanitized = sanitizeTaskItem(item)
+      if (!sanitized || deduped.has(sanitized.id)) {
+        continue
+      }
+
+      deduped.add(sanitized.id)
+      tasks.push(sanitized)
+    }
+
+    return tasks
+  } catch {
+    return []
+  }
+}
+
+const persistTasks = (tasks: TaskItem[]) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
+}
+
 const loadLegacySourceUrl = (): string | null => {
   if (typeof window === 'undefined') {
     return null
@@ -817,6 +1073,7 @@ type InitialProjectData = {
   projects: ProjectItem[]
   boards: Record<ProjectId, Ow64Board>
   selectedProjectId: ProjectId | null
+  tasks: TaskItem[]
 }
 
 const stableStringify = (value: unknown): string => {
@@ -834,6 +1091,7 @@ const stableStringify = (value: unknown): string => {
 
 const buildSyncFingerprint = (data: InitialProjectData): string => {
   const projects = [...data.projects].sort((left, right) => left.id.localeCompare(right.id))
+  const tasks = [...data.tasks].sort((left, right) => left.id.localeCompare(right.id))
   const boardKeys = Object.keys(data.boards).sort((left, right) => left.localeCompare(right))
   const boards = boardKeys.reduce(
     (acc, projectId) => {
@@ -845,6 +1103,7 @@ const buildSyncFingerprint = (data: InitialProjectData): string => {
 
   return stableStringify({
     projects,
+    tasks,
     boards,
     selectedProjectId: data.selectedProjectId,
   })
@@ -852,6 +1111,7 @@ const buildSyncFingerprint = (data: InitialProjectData): string => {
 
 const loadInitialProjectDataFromLocalStorage = (): InitialProjectData => {
   const projects = loadProjectList()
+  const projectIdSet = new Set(projects.map((project) => project.id))
   const boards = projects.reduce(
     (acc, project) => {
       acc[project.id] = loadOw64Board(project.id)
@@ -859,11 +1119,13 @@ const loadInitialProjectDataFromLocalStorage = (): InitialProjectData => {
     },
     {} as Record<ProjectId, Ow64Board>,
   )
+  const tasks = loadTasksFromLocalStorage().filter((task) => projectIdSet.has(task.projectId))
 
   return {
     projects,
     boards,
     selectedProjectId: projects[0]?.id ?? null,
+    tasks,
   }
 }
 
@@ -901,6 +1163,7 @@ const parseInitialProjectDataFromSource = (incoming: unknown): InitialProjectDat
     projects: unknown
     boards: unknown
     selectedProjectId: unknown
+    tasks: unknown
   }>
 
   if (!Array.isArray(payload.projects)) {
@@ -940,10 +1203,26 @@ const parseInitialProjectDataFromSource = (incoming: unknown): InitialProjectDat
       ? payload.selectedProjectId
       : projects[0]?.id ?? null
 
+  const projectIdSet = new Set(projects.map((project) => project.id))
+  const tasks: TaskItem[] = []
+  const taskIds = new Set<string>()
+  if (Array.isArray(payload.tasks)) {
+    for (const item of payload.tasks) {
+      const sanitized = sanitizeTaskItem(item)
+      if (!sanitized || taskIds.has(sanitized.id) || !projectIdSet.has(sanitized.projectId)) {
+        continue
+      }
+
+      taskIds.add(sanitized.id)
+      tasks.push(sanitized)
+    }
+  }
+
   return {
     projects,
     boards,
     selectedProjectId,
+    tasks,
   }
 }
 
@@ -1244,7 +1523,9 @@ const loadInitialProjectDataFromGistSource = async (source: string, githubToken:
 
     const projects: ProjectItem[] = []
     const boards: Record<ProjectId, Ow64Board> = {}
+    const tasks: TaskItem[] = []
     const seenIds = new Set<ProjectId>()
+    const seenTaskIds = new Set<string>()
     let selectedProjectIdFromManifest: ProjectId | null = null
 
     const fileEntries = Object.entries(files)
@@ -1268,7 +1549,7 @@ const loadInitialProjectDataFromGistSource = async (source: string, githubToken:
         continue
       }
 
-      const singlePayload = parsedPayload as Partial<{ project: unknown; board: unknown }>
+      const singlePayload = parsedPayload as Partial<{ project: unknown; board: unknown; tasks: unknown }>
       if (!singlePayload.project || !isProjectItem(singlePayload.project)) {
         continue
       }
@@ -1281,6 +1562,18 @@ const loadInitialProjectDataFromGistSource = async (source: string, githubToken:
       seenIds.add(project.id)
       projects.push(project)
       boards[project.id] = mergeBoardWithDefault(singlePayload.board)
+
+      if (Array.isArray(singlePayload.tasks)) {
+        for (const taskCandidate of singlePayload.tasks) {
+          const sanitizedTask = sanitizeTaskItem(taskCandidate)
+          if (!sanitizedTask || sanitizedTask.projectId !== project.id || seenTaskIds.has(sanitizedTask.id)) {
+            continue
+          }
+
+          seenTaskIds.add(sanitizedTask.id)
+          tasks.push(sanitizedTask)
+        }
+      }
     }
 
     if (projects.length > 0) {
@@ -1295,6 +1588,7 @@ const loadInitialProjectDataFromGistSource = async (source: string, githubToken:
           projects,
           boards,
           selectedProjectId,
+          tasks,
         },
       }
     }
@@ -1386,6 +1680,7 @@ const createGistSourceDataAtUrl = async (
           {
             project,
             board: data.boards[project.id] ?? createDefaultOw64Board(),
+            tasks: data.tasks.filter((task) => task.projectId === project.id),
           },
           null,
           2,
@@ -2275,6 +2570,7 @@ function App() {
   const [projects, setProjects] = useState<ProjectItem[]>(() => INITIAL_PROJECT_DATA.projects)
   const [selectedProjectId, setSelectedProjectId] = useState<ProjectId | null>(() => INITIAL_PROJECT_DATA.selectedProjectId)
   const [activeTab, setActiveTab] = useState<ProjectTabId>('mandala')
+  const [tasks, setTasks] = useState<TaskItem[]>(() => INITIAL_PROJECT_DATA.tasks)
   const [activeLayer, setActiveLayer] = useState<MandalaLayer>('root')
   const [drillPath, setDrillPath] = useState<DrillPath | null>(null)
   const [boardByProject, setBoardByProject] = useState<Record<ProjectId, Ow64Board>>(() => INITIAL_PROJECT_DATA.boards)
@@ -2308,6 +2604,8 @@ function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsedPreference())
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const [taskDrawerTarget, setTaskDrawerTarget] = useState<EditingTarget | null>(null)
+  const [taskDraftTitle, setTaskDraftTitle] = useState('')
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const effectiveS3SourceUrl = configuredS3SourceUrl.trim() || null
@@ -2335,8 +2633,9 @@ function App() {
         projects,
         boards: boardByProject,
         selectedProjectId,
+        tasks,
       }),
-    [projects, boardByProject, selectedProjectId],
+    [projects, boardByProject, selectedProjectId, tasks],
   )
   const activeSourceSyncStatus = useMemo(() => {
     if (effectiveSourceType === 'local') {
@@ -2395,11 +2694,14 @@ function App() {
     setProjects(data.projects)
     setBoardByProject(data.boards)
     setSelectedProjectId(data.selectedProjectId)
+    setTasks(data.tasks)
     setProjectEditingId(null)
     setIsCreatingProject(false)
     setEditingTarget(null)
     setDraftTitle('')
     setDraftSubtitle('')
+    setTaskDrawerTarget(null)
+    setTaskDraftTitle('')
     setActiveLayer('root')
     setDrillPath(null)
   }
@@ -2568,6 +2870,10 @@ function App() {
     persistSidebarCollapsedPreference(isSidebarCollapsed)
   }, [isSidebarCollapsed])
 
+  useEffect(() => {
+    persistTasks(tasks)
+  }, [tasks])
+
   const selectedProject = useMemo(
     () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
     [projects, selectedProjectId],
@@ -2582,6 +2888,46 @@ function App() {
   const activeDrillNodeExact = getNodeByPathExact(currentBoard, activeDrillPath)
   const activeDrillNode = activeDrillNodeExact ?? getNodeByPath(currentBoard, activeDrillPath)
   const activeDrillTitleSegments = getPathTitleSegments(currentBoard, activeDrillPath)
+  const selectedProjectTasks = useMemo(() => {
+    if (!selectedProjectId) {
+      return []
+    }
+
+    return tasks.filter((task) => task.projectId === selectedProjectId)
+  }, [selectedProjectId, tasks])
+  const taskStatsByTargetKey = useMemo(() => {
+    const stats = new Map<string, { total: number; pending: number }>()
+    for (const task of selectedProjectTasks) {
+      const key = toTargetKey(task.linkedTarget)
+      const current = stats.get(key) ?? { total: 0, pending: 0 }
+      current.total += 1
+      if (task.status !== 'done') {
+        current.pending += 1
+      }
+      stats.set(key, current)
+    }
+
+    return stats
+  }, [selectedProjectTasks])
+  const activeTaskDrawerTasks = useMemo(() => {
+    if (!taskDrawerTarget) {
+      return []
+    }
+
+    const key = toTargetKey(taskDrawerTarget)
+    return selectedProjectTasks.filter((task) => toTargetKey(task.linkedTarget) === key)
+  }, [selectedProjectTasks, taskDrawerTarget])
+  const getTaskStatsForTarget = (target: EditingTarget): { total: number; pending: number } => {
+    return taskStatsByTargetKey.get(toTargetKey(target)) ?? { total: 0, pending: 0 }
+  }
+  const getTargetDisplayLabel = (target: EditingTarget): string => {
+    const title = getTargetTitleFromBoard(currentBoard, target)
+    if (title) {
+      return title
+    }
+
+    return getTargetLabel(target)
+  }
 
   const resetEditingDraft = () => {
     setEditingTarget(null)
@@ -2671,6 +3017,7 @@ function App() {
       projects,
       boards: boardByProject,
       selectedProjectId,
+      tasks,
     }
 
     const saved = await createS3SourceDataAtUrl(effectiveS3SourceUrl, dataToSave)
@@ -2706,6 +3053,7 @@ function App() {
       projects,
       boards: boardByProject,
       selectedProjectId,
+      tasks,
     }
 
     const saved = await createGistSourceDataAtUrl(effectiveGistSourceUrl, dataToSave, effectiveGistToken)
@@ -2757,6 +3105,7 @@ function App() {
 
   const handleViewChange = (nextView: ViewMode) => {
     resetEditingDraft()
+    handleCloseTaskDrawer()
     resetMandalaLayer()
     resetProjectDraft()
     setView(nextView)
@@ -2764,6 +3113,7 @@ function App() {
 
   const handleTabChange = (tabId: ProjectTabId) => {
     resetEditingDraft()
+    handleCloseTaskDrawer()
     resetProjectDraft()
     if (tabId !== 'mandala') {
       resetMandalaLayer()
@@ -2773,6 +3123,7 @@ function App() {
 
   const handleProjectEnter = (projectId: ProjectId) => {
     resetEditingDraft()
+    handleCloseTaskDrawer()
     resetMandalaLayer()
     resetProjectDraft()
     setSelectedProjectId(projectId)
@@ -2831,6 +3182,7 @@ function App() {
         [newProjectId]: initialBoard,
       }))
       persistOw64Board(newProjectId, initialBoard)
+      handleCloseTaskDrawer()
       setSelectedProjectId(newProjectId)
 
       handleProjectEditCancel()
@@ -2864,6 +3216,7 @@ function App() {
     const nextProjects = projects.filter((project) => project.id !== projectId)
     setProjects(nextProjects)
     persistProjectList(nextProjects)
+    setTasks((prev) => prev.filter((task) => task.projectId !== projectId))
 
     setBoardByProject((prev) => {
       if (!(projectId in prev)) {
@@ -2889,6 +3242,10 @@ function App() {
         setView('projects')
       }
     }
+
+    if (taskDrawerTarget) {
+      handleCloseTaskDrawer()
+    }
   }
 
   const handleStartEdit = (target: EditingTarget) => {
@@ -2896,6 +3253,80 @@ function App() {
     setEditingTarget(target)
     setDraftTitle(content.title)
     setDraftSubtitle(content.subtitle)
+  }
+
+  const handleOpenTaskDrawer = (target: EditingTarget) => {
+    if (!selectedProjectId) {
+      return
+    }
+
+    setTaskDrawerTarget(target)
+    setTaskDraftTitle('')
+  }
+
+  const handleCloseTaskDrawer = () => {
+    setTaskDrawerTarget(null)
+    setTaskDraftTitle('')
+  }
+
+  const handleCreateTaskForDrawer = () => {
+    if (!selectedProjectId || !taskDrawerTarget) {
+      return
+    }
+
+    const trimmedTitle = taskDraftTitle.trim()
+    if (!trimmedTitle) {
+      return
+    }
+
+    const now = new Date().toISOString()
+    const nextTask: TaskItem = {
+      id: createTaskId(),
+      projectId: selectedProjectId,
+      title: trimmedTitle,
+      status: 'todo',
+      linkedTarget: taskDrawerTarget,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    setTasks((prev) => [nextTask, ...prev])
+    setTaskDraftTitle('')
+  }
+
+  const handleTaskStatusChange = (taskId: string, status: TaskStatus) => {
+    const now = new Date().toISOString()
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id !== taskId || task.status === status) {
+          return task
+        }
+
+        return {
+          ...task,
+          status,
+          updatedAt: now,
+        }
+      }),
+    )
+  }
+
+  const handleTaskDelete = (taskId: string) => {
+    setTasks((prev) => prev.filter((task) => task.id !== taskId))
+  }
+
+  const handleNavigateToTaskTarget = (target: EditingTarget) => {
+    setActiveTab('mandala')
+    resetEditingDraft()
+
+    if (target.scope === 'core' || target.scope === 'pillar') {
+      setActiveLayer('root')
+      setDrillPath(null)
+      return
+    }
+
+    setActiveLayer('pillar')
+    setDrillPath(target.path)
   }
 
   const handleQuickAdd = (target: EditingTarget) => {
@@ -4016,6 +4447,7 @@ function App() {
                               : { scope: 'pillar', pillarId: cell.id as PillarId }
                           const content = getContentByTarget(currentBoard, target)
                           const rootVisible = target.scope === 'core' ? true : currentBoard.visiblePillars[target.pillarId]
+                          const taskStats = getTaskStatsForTarget(target)
                           const editing = isSameTarget(editingTarget, target)
                           const rootDragTarget: DraggableCardTarget | null =
                             target.scope === 'pillar' ? { scope: 'pillar', pillarId: target.pillarId } : null
@@ -4109,9 +4541,28 @@ function App() {
                                 onDrop={(event) => handleCardDrop(event, rootDragTarget as DraggableCardTarget)}
                                 onDragEnd={handleCardDragEnd}
                               >
+                                {taskStats.total > 0 && (
+                                  <span className={`task-badge ${taskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
+                                    任务 {taskStats.total}
+                                  </span>
+                                )}
                                 <h2 className="mandala-title">{content.title}</h2>
                                 <p className="mandala-subtitle">{content.subtitle}</p>
                                 <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={() => handleOpenTaskDrawer(target)}
+                                    title="关联任务"
+                                    aria-label={`管理 ${cell.marker} 的关联任务`}
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M6 7H18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M6 12H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M6 17H12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M17 16L19 18L22 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </button>
                                   <button
                                     type="button"
                                     className="mandala-cell-action is-primary is-icon"
@@ -4167,15 +4618,34 @@ function App() {
                             )
                           }
 
-                          return (
-                            <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
-                              <h2 className="mandala-title">{content.title}</h2>
-                              <p className="mandala-subtitle">{content.subtitle}</p>
-                              {isDragEnabled && <p className="mandala-hint">拖拽已开启：可交换同层卡片（一次后自动关闭）</p>}
-                              <div className="mandala-cell-actions">
-                                <button
-                                  type="button"
-                                  className={`mandala-cell-action is-icon ${isDragEnabled ? 'is-primary' : ''}`}
+                            return (
+                              <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
+                                {taskStats.total > 0 && (
+                                  <span className={`task-badge ${taskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
+                                    任务 {taskStats.total}
+                                  </span>
+                                )}
+                                <h2 className="mandala-title">{content.title}</h2>
+                                <p className="mandala-subtitle">{content.subtitle}</p>
+                                {isDragEnabled && <p className="mandala-hint">拖拽已开启：可交换同层卡片（一次后自动关闭）</p>}
+                                <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={() => handleOpenTaskDrawer(target)}
+                                    title="关联任务"
+                                    aria-label={`管理 ${cell.marker} 的关联任务`}
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M6 7H18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M6 12H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M6 17H12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M17 16L19 18L22 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`mandala-cell-action is-icon ${isDragEnabled ? 'is-primary' : ''}`}
                                   onClick={handleToggleDragMode}
                                   title={isDragEnabled ? '关闭拖拽' : '开启拖拽'}
                                   aria-label={isDragEnabled ? '关闭拖拽' : '开启拖拽'}
@@ -4239,6 +4709,7 @@ function App() {
                             const marker = getMarkerByPath(activeDrillPath)
                             const editing = isSameTarget(editingTarget, centerTarget)
                             const centerContent = getContentByTarget(currentBoard, centerTarget)
+                            const centerTaskStats = getTaskStatsForTarget(centerTarget)
 
                             const inputIdSuffix =
                               activeDrillPath.length === 1
@@ -4289,10 +4760,29 @@ function App() {
 
                             return (
                               <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${centerContent.title}`}>
+                                {centerTaskStats.total > 0 && (
+                                  <span className={`task-badge ${centerTaskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
+                                    任务 {centerTaskStats.total}
+                                  </span>
+                                )}
                                 <h2 className="mandala-title">{centerContent.title}</h2>
                                 <p className="mandala-subtitle">{centerContent.subtitle}</p>
                                 {isDragEnabled && <p className="mandala-hint">拖拽已开启：可交换同层卡片（一次后自动关闭）</p>}
                                 <div className="mandala-cell-actions">
+                                  <button
+                                    type="button"
+                                    className="mandala-cell-action is-icon"
+                                    onClick={() => handleOpenTaskDrawer(centerTarget)}
+                                    title="关联任务"
+                                    aria-label={`管理 ${marker} 的关联任务`}
+                                  >
+                                    <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                      <path d="M6 7H18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M6 12H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M6 17H12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M17 16L19 18L22 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </button>
                                   <button
                                     type="button"
                                     className={`mandala-cell-action is-icon ${isDragEnabled ? 'is-primary' : ''}`}
@@ -4368,6 +4858,7 @@ function App() {
                             path: activeDrillPath,
                             actionId: gridItem.actionId,
                           }
+                          const actionTaskStats = getTaskStatsForTarget(actionTarget)
                           const editing = isSameTarget(editingTarget, actionTarget)
                           const actionVisible = Boolean(activeDrillNodeExact?.visibleActions[gridItem.actionId])
 
@@ -4464,9 +4955,28 @@ function App() {
                               onDrop={(event) => handleCardDrop(event, actionDragTarget)}
                               onDragEnd={handleCardDragEnd}
                             >
+                              {actionTaskStats.total > 0 && (
+                                <span className={`task-badge ${actionTaskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
+                                  任务 {actionTaskStats.total}
+                                </span>
+                              )}
                               <h2 className="mandala-title">{actionContent.title}</h2>
                               <p className="mandala-subtitle">{actionContent.subtitle}</p>
                               <div className="mandala-cell-actions">
+                                <button
+                                  type="button"
+                                  className="mandala-cell-action is-icon"
+                                  onClick={() => handleOpenTaskDrawer(actionTarget)}
+                                  title="关联任务"
+                                  aria-label={`管理 ${marker} 的关联任务`}
+                                >
+                                  <svg aria-hidden="true" className="mandala-icon" viewBox="0 0 24 24" fill="none">
+                                    <path d="M6 7H18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M6 12H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M6 17H12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M17 16L19 18L22 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                </button>
                                 <button
                                   type="button"
                                   className="mandala-cell-action is-primary is-icon"
@@ -4529,12 +5039,114 @@ function App() {
                   <div className="panel-card">
                     <h2 className="panel-title">{activeTabInfo?.label}</h2>
                     <p className="panel-desc">{activeTabInfo?.description}</p>
+                    <p className="mandala-path">
+                      共 {selectedProjectTasks.length} 条任务 · 未完成 {selectedProjectTasks.filter((task) => task.status !== 'done').length} 条
+                    </p>
                   </div>
-                  <div className="panel-card muted">
-                    <h3 className="panel-subtitle">功能占位</h3>
-                    <p className="panel-desc">此处将填充对应模块的布局与交互。</p>
-                  </div>
+
+                  {selectedProjectTasks.length === 0 ? (
+                    <div className="panel-card muted">
+                      <h3 className="panel-subtitle">暂无任务</h3>
+                      <p className="panel-desc">请在九宫格卡片右上角点击任务按钮，为目标添加关联任务。</p>
+                    </div>
+                  ) : (
+                    <div className="panel-card">
+                      <ul className="task-list" aria-label="项目任务列表">
+                        {selectedProjectTasks.map((task) => (
+                          <li key={task.id} className="task-item">
+                            <div>
+                              <p className="task-item-title">{task.title}</p>
+                              <p className="mandala-path task-item-meta">关联目标：{getTargetDisplayLabel(task.linkedTarget)}</p>
+                            </div>
+                            <div className="task-item-actions">
+                              <select
+                                className="project-input task-status-select"
+                                value={task.status}
+                                onChange={(event) => handleTaskStatusChange(task.id, event.target.value as TaskStatus)}
+                                aria-label="更新任务状态"
+                              >
+                                {TASK_STATUS_OPTIONS.map((status) => (
+                                  <option key={status} value={status}>
+                                    {TASK_STATUS_LABEL[status]}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="mandala-action is-muted"
+                                onClick={() => handleNavigateToTaskTarget(task.linkedTarget)}
+                              >
+                                定位目标
+                              </button>
+                              <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
+                                删除
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </section>
+              )}
+
+              {activeTab === 'mandala' && taskDrawerTarget && (
+                <aside className="task-drawer" aria-label="卡片关联任务抽屉">
+                  <div className="task-drawer-head">
+                    <div>
+                      <p className="nav-title">关联任务</p>
+                      <h3 className="panel-subtitle">目标 {getTargetDisplayLabel(taskDrawerTarget)}</h3>
+                    </div>
+                    <button type="button" className="mandala-action is-muted" onClick={handleCloseTaskDrawer}>
+                      关闭
+                    </button>
+                  </div>
+
+                  <div className="task-drawer-create">
+                    <input
+                      className="project-input"
+                      value={taskDraftTitle}
+                      onChange={(event) => setTaskDraftTitle(event.target.value)}
+                      placeholder="输入任务标题"
+                      aria-label="任务标题"
+                    />
+                    <button type="button" className="mandala-action" onClick={handleCreateTaskForDrawer} disabled={!taskDraftTitle.trim()}>
+                      新增任务
+                    </button>
+                  </div>
+
+                  {activeTaskDrawerTasks.length === 0 ? (
+                    <p className="panel-desc">当前目标还没有关联任务。</p>
+                  ) : (
+                    <ul className="task-list" aria-label="关联任务列表">
+                      {activeTaskDrawerTasks.map((task) => (
+                        <li key={task.id} className="task-item">
+                          <div>
+                            <p className="task-item-title">{task.title}</p>
+                            <p className="mandala-path task-item-meta">更新于 {new Date(task.updatedAt).toLocaleString()}</p>
+                          </div>
+                          <div className="task-item-actions">
+                            <select
+                              className="project-input task-status-select"
+                              value={task.status}
+                              onChange={(event) => handleTaskStatusChange(task.id, event.target.value as TaskStatus)}
+                              aria-label="更新任务状态"
+                            >
+                              {TASK_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {TASK_STATUS_LABEL[status]}
+                                </option>
+                              ))}
+                            </select>
+                            <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
+                              删除
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </aside>
               )}
             </>
           )}
