@@ -156,6 +156,7 @@ type CsvRow = {
 }
 
 type DataSourceType = 'local' | 's3' | 'gist'
+type RemoteSourceType = Exclude<DataSourceType, 'local'>
 
 const ROW_TYPE_LABEL: Record<CsvRow['rowType'], string> = {
   'root-core': 'Root Core',
@@ -790,6 +791,37 @@ type InitialProjectData = {
   projects: ProjectItem[]
   boards: Record<ProjectId, Ow64Board>
   selectedProjectId: ProjectId | null
+}
+
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value)
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+  return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(',')}}`
+}
+
+const buildSyncFingerprint = (data: InitialProjectData): string => {
+  const projects = [...data.projects].sort((left, right) => left.id.localeCompare(right.id))
+  const boardKeys = Object.keys(data.boards).sort((left, right) => left.localeCompare(right))
+  const boards = boardKeys.reduce(
+    (acc, projectId) => {
+      acc[projectId] = data.boards[projectId]
+      return acc
+    },
+    {} as Record<ProjectId, Ow64Board>,
+  )
+
+  return stableStringify({
+    projects,
+    boards,
+    selectedProjectId: data.selectedProjectId,
+  })
 }
 
 const loadInitialProjectDataFromLocalStorage = (): InitialProjectData => {
@@ -2242,6 +2274,10 @@ function App() {
   const [gistSourceFeedback, setGistSourceFeedback] = useState('')
   const [isSavingToS3Source, setIsSavingToS3Source] = useState(false)
   const [isSavingToGistSource, setIsSavingToGistSource] = useState(false)
+  const [lastSyncedFingerprintBySource, setLastSyncedFingerprintBySource] = useState<Record<RemoteSourceType, string | null>>({
+    s3: null,
+    gist: null,
+  })
   const [isDragEnabled, setIsDragEnabled] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
@@ -2267,6 +2303,50 @@ function App() {
         : !effectiveGistSourceUrl || isSavingToGistSource || !effectiveGistToken
   const activeSourceFeedback =
     effectiveSourceType === 'local' ? localSourceFeedback : effectiveSourceType === 's3' ? s3SourceFeedback : gistSourceFeedback
+  const currentDataFingerprint = useMemo(
+    () =>
+      buildSyncFingerprint({
+        projects,
+        boards: boardByProject,
+        selectedProjectId,
+      }),
+    [projects, boardByProject, selectedProjectId],
+  )
+  const activeSourceSyncStatus = useMemo(() => {
+    if (effectiveSourceType === 'local') {
+      return {
+        tone: 'muted' as const,
+        text: '同步状态：localStorage 自动保存',
+      }
+    }
+
+    if (isSavingToActiveSource) {
+      return {
+        tone: 'muted' as const,
+        text: '同步状态：保存中...',
+      }
+    }
+
+    const lastSyncedFingerprint = lastSyncedFingerprintBySource[effectiveSourceType]
+    if (!lastSyncedFingerprint) {
+      return {
+        tone: 'muted' as const,
+        text: '同步状态：未连接远端，无法判断是否有待保存数据',
+      }
+    }
+
+    if (lastSyncedFingerprint === currentDataFingerprint) {
+      return {
+        tone: 'clean' as const,
+        text: '同步状态：已同步',
+      }
+    }
+
+    return {
+      tone: 'dirty' as const,
+      text: '同步状态：有待保存数据',
+    }
+  }, [currentDataFingerprint, effectiveSourceType, isSavingToActiveSource, lastSyncedFingerprintBySource])
 
   const applyInitialProjectData = (data: InitialProjectData) => {
     setProjects(data.projects)
@@ -2317,12 +2397,26 @@ function App() {
 
       if (sourceData.status === 'ok') {
         applyInitialProjectData(sourceData.data)
+        if (effectiveSourceType === 's3' || effectiveSourceType === 'gist') {
+          const syncedFingerprint = buildSyncFingerprint(sourceData.data)
+          setLastSyncedFingerprintBySource((prev) => ({
+            ...prev,
+            [effectiveSourceType]: syncedFingerprint,
+          }))
+        }
         if (effectiveSourceType === 'gist') {
           setGistSourceFeedback('加载成功：已从 Gist 数据源加载。')
         } else {
           setS3SourceFeedback('加载成功：已从 S3 数据源加载。')
         }
         return
+      }
+
+      if (effectiveSourceType === 's3' || effectiveSourceType === 'gist') {
+        setLastSyncedFingerprintBySource((prev) => ({
+          ...prev,
+          [effectiveSourceType]: null,
+        }))
       }
 
       const localData = loadInitialProjectDataFromLocalStorage()
@@ -2519,6 +2613,11 @@ function App() {
     const saved = await createS3SourceDataAtUrl(effectiveS3SourceUrl, dataToSave)
     if (saved.status === 'ok') {
       setS3SourceFeedback('已保存到 S3 数据源。')
+      const syncedFingerprint = buildSyncFingerprint(dataToSave)
+      setLastSyncedFingerprintBySource((prev) => ({
+        ...prev,
+        s3: syncedFingerprint,
+      }))
     } else if (saved.status === 'auth-required') {
       setS3SourceFeedback('保存到 S3 失败：需要认证凭据。')
     } else if (saved.status === 'forbidden') {
@@ -2549,6 +2648,11 @@ function App() {
     const saved = await createGistSourceDataAtUrl(effectiveGistSourceUrl, dataToSave, effectiveGistToken)
     if (saved.status === 'ok') {
       setGistSourceFeedback('保存成功：已保存到 Gist 数据源。')
+      const syncedFingerprint = buildSyncFingerprint(dataToSave)
+      setLastSyncedFingerprintBySource((prev) => ({
+        ...prev,
+        gist: syncedFingerprint,
+      }))
     } else if (saved.status === 'auth-required') {
       setGistSourceFeedback('保存失败：需要有效的 GitHub Token。')
     } else if (saved.status === 'forbidden') {
@@ -2754,6 +2858,10 @@ function App() {
       persistOw64Board(selectedProjectId, updatedBoard)
       return next
     })
+
+    setEditingTarget(target)
+    setDraftTitle(defaultContent.title)
+    setDraftSubtitle(defaultContent.subtitle)
   }
 
   const handleCancelEdit = () => {
@@ -3166,6 +3274,7 @@ function App() {
                 {isSavingToActiveSource ? '保存中...' : activeSourceSaveLabel}
               </button>
             </div>
+            <p className={`mandala-path sidebar-mandala-path sidebar-sync-status is-${activeSourceSyncStatus.tone}`}>{activeSourceSyncStatus.text}</p>
             {activeSourceFeedback && <p className="mandala-path sidebar-mandala-path">{activeSourceFeedback}</p>}
           </section>
 

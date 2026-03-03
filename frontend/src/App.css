@@ -581,6 +581,15 @@
   line-height: 1.4;
 }
 
+.sidebar-sync-status.is-clean {
+  color: #2f6f44;
+}
+
+.sidebar-sync-status.is-dirty {
+  color: #9a3412;
+  font-weight: 600;
+}
+
 .mandala-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
