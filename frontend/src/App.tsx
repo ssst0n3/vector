@@ -1810,27 +1810,10 @@ const setContentByTarget = (board: Ow64Board, target: EditingTarget, content: Ce
   }
 }
 
-const getDefaultContentByTarget = (target: EditingTarget, board: Ow64Board): CellContent => {
-  if (target.scope === 'drillAction') {
-    const currentNode = getNodeByPathExact(board, target.path)
-    if (!currentNode) {
-      const defaults = createDefaultOw64Board()
-      return getNodeByPath(defaults, target.path).actions[target.actionId]
-    }
-    const seedMarker = target.path.length === 1 ? PILLAR_META[target.path[0]].marker : currentNode.core.title
-    return createDrillNode(currentNode.core, seedMarker).actions[target.actionId]
-  }
-
-  if (target.scope === 'drillCore' && target.path.length > 1) {
-    const parentPath = [target.path[0], ...target.path.slice(1, -1)] as DrillPath
-    const parentNode = getNodeByPath(board, parentPath)
-    const seedActionId = target.path[target.path.length - 1] as ActionId
-    return parentNode.actions[seedActionId]
-  }
-
-  const defaults = createDefaultOw64Board()
-  return getContentByTarget(defaults, target)
-}
+const createEmptyCellContent = (): CellContent => ({
+  title: '',
+  subtitle: '',
+})
 
 const toMarkerPath = (path: DrillPath): string => {
   const [pillarId, ...actionPath] = path
@@ -2754,7 +2737,7 @@ function App() {
     }
 
     resetEditingDraft()
-    const defaultContent = getDefaultContentByTarget(target, currentBoard)
+    const defaultContent = createEmptyCellContent()
 
     setBoardByProject((prev) => {
       const sourceBoard = prev[selectedProjectId]
@@ -2844,32 +2827,6 @@ function App() {
     }
 
     if (target.scope === 'drillCore') {
-      const defaultContent = getDefaultContentByTarget(target, currentBoard)
-
-      setBoardByProject((prev) => {
-        const sourceBoard = prev[selectedProjectId]
-        if (!sourceBoard) {
-          return prev
-        }
-
-        const contentResetBoard = setContentByTarget(sourceBoard, target, defaultContent)
-        const updatedBoard = setDrillTargetVisibility(contentResetBoard, target, true)
-        if (updatedBoard === sourceBoard) {
-          return prev
-        }
-
-        const next = {
-          ...prev,
-          [selectedProjectId]: updatedBoard,
-        }
-
-        persistOw64Board(selectedProjectId, updatedBoard)
-        return next
-      })
-
-      if (isSameTarget(editingTarget, target)) {
-        handleCancelEdit()
-      }
       return
     }
 
@@ -4135,15 +4092,6 @@ function App() {
                                     <button type="button" className="mandala-action is-muted" onClick={handleCancelEdit}>
                                       取消
                                     </button>
-                                    {activeDrillNodeExact?.visibleCore && (
-                                      <button
-                                        type="button"
-                                        className="mandala-action is-muted"
-                                        onClick={() => handleResetTarget(centerTarget)}
-                                      >
-                                        恢复默认
-                                      </button>
-                                    )}
                                   </div>
                                 </div>
                               )
@@ -4272,7 +4220,7 @@ function App() {
                                       className="mandala-action is-muted"
                                       onClick={() => handleResetTarget(actionTarget)}
                                     >
-                                      恢复默认
+                                      删除
                                     </button>
                                   )}
                                 </div>
