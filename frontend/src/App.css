@@ -737,7 +737,7 @@
 .ow64-mini-text {
   margin: 0;
   max-width: 100%;
-  font-size: clamp(0.66rem, 0.82vw, 0.8rem);
+  font-size: clamp(0.74rem, 0.92vw, 0.9rem);
   line-height: 1.2;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -755,7 +755,7 @@
 .ow64-mini-subtitle {
   margin: 0;
   max-width: 100%;
-  font-size: clamp(0.54rem, 0.62vw, 0.64rem);
+  font-size: clamp(0.6rem, 0.72vw, 0.74rem);
   line-height: 1.2;
   color: var(--text-muted);
   text-align: left;
@@ -794,15 +794,15 @@
 }
 
 .app-main.is-project-mandala .mandala-title {
-  font-size: 1rem;
+  font-size: 1.08rem;
 }
 
 .app-main.is-project-mandala .mandala-subtitle {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .app-main.is-project-mandala .mandala-hint {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
 }
 
 .mandala-cell:hover {
@@ -1237,11 +1237,11 @@
   }
 
   .ow64-mini-text {
-    font-size: 0.64rem;
+    font-size: 0.7rem;
   }
 
   .ow64-mini-subtitle {
-    font-size: 0.52rem;
+    font-size: 0.58rem;
   }
 
   .app-main.is-project-mandala .mandala-cell {

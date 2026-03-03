@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
+import DataSourceSettingsPanel from './components/DataSourceSettingsPanel'
 import './App.css'
 
 const LEGACY_DEFAULT_PROJECTS = [
@@ -129,7 +130,7 @@ const PILLAR_GRID_LAYOUT = [
 
 const OVERVIEW_GRID_LAYOUT = ['w1', 'w2', 'w3', 'w4', 'objective', 'w5', 'w6', 'w7', 'w8'] as const
 
-type ViewMode = 'home' | 'projects' | 'projectDetail'
+type ViewMode = 'home' | 'projects' | 'settings' | 'projectDetail'
 type MandalaLayer = 'root' | 'pillar' | 'overview'
 type ProjectId = string
 type ProjectItem = {
@@ -175,6 +176,8 @@ type CsvRow = {
   subtitle: string
 }
 
+type DataSourceType = 'local' | 's3' | 'gist'
+
 const ROW_TYPE_LABEL: Record<CsvRow['rowType'], string> = {
   'root-core': 'Root Core',
   'root-pillar': 'Root Pillar',
@@ -196,7 +199,13 @@ const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
 const PROJECT_LIST_STORAGE_KEY = 'project:list:v1'
 const LEGACY_PROJECT_META_STORAGE_KEY = 'project:meta:v1'
-const DATA_SOURCE_URL_STORAGE_KEY = 'ow64:data-source:url'
+const LEGACY_DATA_SOURCE_URL_STORAGE_KEY = 'ow64:data-source:url'
+const LEGACY_DATA_SOURCE_GITHUB_TOKEN_STORAGE_KEY = 'ow64:data-source:github-token'
+const DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY = 'ow64:data-source:active-type'
+const DATA_SOURCE_S3_URL_STORAGE_KEY = 'ow64:data-source:s3:url'
+const DATA_SOURCE_GIST_URL_STORAGE_KEY = 'ow64:data-source:gist:url'
+const DATA_SOURCE_GIST_TOKEN_STORAGE_KEY = 'ow64:data-source:gist:token'
+const DEFAULT_GIST_FILE_NAME = 'ow64-data.json'
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
 
@@ -580,26 +589,139 @@ const persistProjectList = (projects: ProjectItem[]) => {
   window.localStorage.setItem(PROJECT_LIST_STORAGE_KEY, JSON.stringify(projects))
 }
 
-const loadConfiguredSourceUrl = (): string | null => {
+const loadLegacySourceUrl = (): string | null => {
   if (typeof window === 'undefined') {
     return null
   }
 
-  const source = window.localStorage.getItem(DATA_SOURCE_URL_STORAGE_KEY)?.trim()
+  const source = window.localStorage.getItem(LEGACY_DATA_SOURCE_URL_STORAGE_KEY)?.trim()
   return source ? source : null
 }
 
-const persistConfiguredSourceUrl = (source: string | null) => {
+const loadConfiguredSourceType = (): DataSourceType => {
+  if (typeof window === 'undefined') {
+    return 'local'
+  }
+
+  const savedType = window.localStorage.getItem(DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY)
+  if (savedType === 'local' || savedType === 's3' || savedType === 'gist') {
+    return savedType
+  }
+
+  const legacySourceUrl = loadLegacySourceUrl()
+  if (!legacySourceUrl) {
+    return 'local'
+  }
+
+  const resolved = resolveDataSourceTarget(legacySourceUrl)
+  return resolved?.kind === 'gist' ? 'gist' : 's3'
+}
+
+const loadConfiguredS3SourceUrl = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const source = window.localStorage.getItem(DATA_SOURCE_S3_URL_STORAGE_KEY)?.trim()
+  if (source) {
+    return source
+  }
+
+  const legacySourceUrl = loadLegacySourceUrl()
+  if (!legacySourceUrl) {
+    return null
+  }
+
+  const resolved = resolveDataSourceTarget(legacySourceUrl)
+  if (resolved?.kind === 's3') {
+    return resolved.url
+  }
+
+  return null
+}
+
+const loadConfiguredGistSourceUrl = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const source = window.localStorage.getItem(DATA_SOURCE_GIST_URL_STORAGE_KEY)?.trim()
+  if (source) {
+    return source
+  }
+
+  const legacySourceUrl = loadLegacySourceUrl()
+  if (!legacySourceUrl) {
+    return null
+  }
+
+  const resolved = resolveDataSourceTarget(legacySourceUrl)
+  if (resolved?.kind === 'gist') {
+    return legacySourceUrl
+  }
+
+  return null
+}
+
+const loadConfiguredGistToken = (): string | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const token = window.localStorage.getItem(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY)?.trim()
+  if (token) {
+    return token
+  }
+
+  const legacyToken = window.localStorage.getItem(LEGACY_DATA_SOURCE_GITHUB_TOKEN_STORAGE_KEY)?.trim()
+  return legacyToken ? legacyToken : null
+}
+
+const persistConfiguredSourceType = (sourceType: DataSourceType) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY, sourceType)
+}
+
+const persistConfiguredS3SourceUrl = (source: string | null) => {
   if (typeof window === 'undefined') {
     return
   }
 
   if (!source) {
-    window.localStorage.removeItem(DATA_SOURCE_URL_STORAGE_KEY)
+    window.localStorage.removeItem(DATA_SOURCE_S3_URL_STORAGE_KEY)
     return
   }
 
-  window.localStorage.setItem(DATA_SOURCE_URL_STORAGE_KEY, source)
+  window.localStorage.setItem(DATA_SOURCE_S3_URL_STORAGE_KEY, source)
+}
+
+const persistConfiguredGistSourceUrl = (source: string | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (!source) {
+    window.localStorage.removeItem(DATA_SOURCE_GIST_URL_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(DATA_SOURCE_GIST_URL_STORAGE_KEY, source)
+}
+
+const persistConfiguredGistToken = (token: string | null) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (!token) {
+    window.localStorage.removeItem(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY)
+    return
+  }
+
+  window.localStorage.setItem(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY, token)
 }
 
 const hasLegacyProjectEvidence = (): boolean => {
@@ -806,24 +928,224 @@ const parseInitialProjectDataFromSource = (incoming: unknown): InitialProjectDat
 type SourceLoadResult =
   | { status: 'ok'; data: InitialProjectData }
   | { status: 'not-found' }
+  | { status: 'auth-required' }
+  | { status: 'forbidden' }
   | { status: 'error' }
 
-const loadInitialProjectDataFromSource = async (source: string): Promise<SourceLoadResult> => {
+type SourceSaveResult =
+  | { status: 'ok' }
+  | { status: 'not-found' }
+  | { status: 'auth-required' }
+  | { status: 'forbidden' }
+  | { status: 'error' }
+
+type DataSourceTarget =
+  | { kind: 's3'; url: string }
+  | { kind: 'gist'; gistId: string; fileName: string | null; apiUrl: string }
+
+type GistFilePayload = {
+  filename?: string
+  content?: string
+  raw_url?: string
+  truncated?: boolean
+}
+
+type GistManifestPayload = {
+  selectedProjectId: ProjectId | null
+}
+
+const isLikelyGistId = (value: string): boolean => {
+  return /^[0-9a-f]{8,}$/i.test(value)
+}
+
+const resolveDataSourceTarget = (source: string): DataSourceTarget | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(source, window.location.href)
+  } catch {
+    return null
+  }
+
+  const host = parsedUrl.hostname.toLowerCase()
+  const segments = parsedUrl.pathname
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+
+  if (host === 'gist.github.com') {
+    const gistId = segments.find((segment) => isLikelyGistId(segment))
+    if (!gistId) {
+      return null
+    }
+
+    const fileName = parsedUrl.searchParams.get('file')?.trim() || null
+    return {
+      kind: 'gist',
+      gistId,
+      fileName,
+      apiUrl: `https://api.github.com/gists/${gistId}`,
+    }
+  }
+
+  if (host === 'api.github.com' && segments[0] === 'gists' && segments[1] && isLikelyGistId(segments[1])) {
+    const fileName = parsedUrl.searchParams.get('file')?.trim() || null
+    return {
+      kind: 'gist',
+      gistId: segments[1],
+      fileName,
+      apiUrl: `https://api.github.com/gists/${segments[1]}`,
+    }
+  }
+
+  return {
+    kind: 's3',
+    url: parsedUrl.toString(),
+  }
+}
+
+const resolveGistSourceInput = (source: string): DataSourceTarget | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const trimmedSource = source.trim()
+  if (!trimmedSource) {
+    return null
+  }
+
+  if (isLikelyGistId(trimmedSource)) {
+    return {
+      kind: 'gist',
+      gistId: trimmedSource,
+      fileName: null,
+      apiUrl: `https://api.github.com/gists/${trimmedSource}`,
+    }
+  }
+
+  const resolved = resolveDataSourceTarget(trimmedSource)
+  if (!resolved || resolved.kind !== 'gist') {
+    return null
+  }
+
+  return resolved
+}
+
+const buildSourceRequestHeaders = (githubToken: string | null): HeadersInit => {
+  if (!githubToken) {
+    return {}
+  }
+
+  return {
+    Authorization: `token ${githubToken}`,
+  }
+}
+
+const extractGistFilePayload = (incoming: unknown): Record<string, GistFilePayload> | null => {
+  if (!incoming || typeof incoming !== 'object') {
+    return null
+  }
+
+  const files = incoming as Record<string, unknown>
+  const extracted: Record<string, GistFilePayload> = {}
+
+  for (const key of Object.keys(files)) {
+    const value = files[key]
+    if (!value || typeof value !== 'object') {
+      continue
+    }
+
+    const file = value as Partial<GistFilePayload>
+    extracted[key] = {
+      filename: typeof file.filename === 'string' ? file.filename : undefined,
+      content: typeof file.content === 'string' ? file.content : undefined,
+      raw_url: typeof file.raw_url === 'string' ? file.raw_url : undefined,
+      truncated: typeof file.truncated === 'boolean' ? file.truncated : undefined,
+    }
+  }
+
+  return extracted
+}
+
+const pickGistFile = (files: Record<string, GistFilePayload>, preferredFileName: string | null): GistFilePayload | null => {
+  if (preferredFileName && files[preferredFileName]) {
+    return files[preferredFileName]
+  }
+
+  if (files[DEFAULT_GIST_FILE_NAME]) {
+    return files[DEFAULT_GIST_FILE_NAME]
+  }
+
+  const jsonFile = Object.entries(files).find(([fileName]) => fileName.toLowerCase().endsWith('.json'))
+  if (jsonFile) {
+    return jsonFile[1]
+  }
+
+  const firstFile = Object.values(files)[0]
+  return firstFile ?? null
+}
+
+const getGistFileContent = async (file: GistFilePayload, githubToken: string | null): Promise<string | null> => {
+  let rawContent = file.content
+  if ((!rawContent || file.truncated) && file.raw_url) {
+    const rawResponse = await fetch(file.raw_url, {
+      headers: {
+        ...buildSourceRequestHeaders(githubToken),
+      },
+    })
+
+    if (!rawResponse.ok) {
+      return null
+    }
+
+    rawContent = await rawResponse.text()
+  }
+
+  return rawContent ?? null
+}
+
+const parseGistManifestPayload = (incoming: unknown): GistManifestPayload | null => {
+  if (!incoming || typeof incoming !== 'object') {
+    return null
+  }
+
+  const payload = incoming as Partial<{ selectedProjectId: unknown }>
+  if (payload.selectedProjectId === null) {
+    return { selectedProjectId: null }
+  }
+
+  if (typeof payload.selectedProjectId !== 'string') {
+    return null
+  }
+
+  return { selectedProjectId: payload.selectedProjectId }
+}
+
+const loadInitialProjectDataFromS3Source = async (source: string): Promise<SourceLoadResult> => {
   if (typeof window === 'undefined') {
     return { status: 'error' }
   }
 
-  let sourceUrl: string
-  try {
-    sourceUrl = new URL(source, window.location.href).toString()
-  } catch {
+  const target = resolveDataSourceTarget(source)
+  if (!target || target.kind !== 's3') {
     return { status: 'error' }
   }
 
   try {
-    const response = await fetch(sourceUrl)
+    const response = await fetch(target.url)
     if (response.status === 404) {
       return { status: 'not-found' }
+    }
+
+    if (response.status === 401) {
+      return { status: 'auth-required' }
+    }
+
+    if (response.status === 403) {
+      return { status: 'forbidden' }
     }
 
     if (!response.ok) {
@@ -842,20 +1164,152 @@ const loadInitialProjectDataFromSource = async (source: string): Promise<SourceL
   }
 }
 
-const createSourceDataAtUrl = async (source: string, data: InitialProjectData): Promise<boolean> => {
+const loadInitialProjectDataFromGistSource = async (source: string, githubToken: string | null): Promise<SourceLoadResult> => {
   if (typeof window === 'undefined') {
-    return false
+    return { status: 'error' }
   }
 
-  let sourceUrl: string
+  const target = resolveGistSourceInput(source)
+  if (!target || target.kind !== 'gist') {
+    return { status: 'error' }
+  }
+
   try {
-    sourceUrl = new URL(source, window.location.href).toString()
+    const response = await fetch(target.apiUrl, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        ...buildSourceRequestHeaders(githubToken),
+      },
+    })
+
+    if (response.status === 404) {
+      return { status: 'not-found' }
+    }
+
+    if (response.status === 401) {
+      return { status: 'auth-required' }
+    }
+
+    if (response.status === 403) {
+      return { status: 'forbidden' }
+    }
+
+    if (!response.ok) {
+      return { status: 'error' }
+    }
+
+    const payload = (await response.json()) as Partial<{ files: unknown }>
+    const files = extractGistFilePayload(payload.files)
+    if (!files || Object.keys(files).length === 0) {
+      return { status: 'error' }
+    }
+
+    const explicitTargetFile = target.fileName?.trim() || null
+    if (explicitTargetFile && files[explicitTargetFile]) {
+      const explicitContent = await getGistFileContent(files[explicitTargetFile], githubToken)
+      if (!explicitContent) {
+        return { status: 'error' }
+      }
+
+      const explicitParsedPayload = JSON.parse(explicitContent) as unknown
+      const explicitParsed = parseInitialProjectDataFromSource(explicitParsedPayload)
+      if (!explicitParsed) {
+        return { status: 'error' }
+      }
+
+      return { status: 'ok', data: explicitParsed }
+    }
+
+    const legacyFile = pickGistFile(files, null)
+    if (legacyFile) {
+      const legacyContent = await getGistFileContent(legacyFile, githubToken)
+      if (legacyContent) {
+        const legacyParsedPayload = JSON.parse(legacyContent) as unknown
+        const legacyParsed = parseInitialProjectDataFromSource(legacyParsedPayload)
+        if (legacyParsed) {
+          return { status: 'ok', data: legacyParsed }
+        }
+      }
+    }
+
+    const projects: ProjectItem[] = []
+    const boards: Record<ProjectId, Ow64Board> = {}
+    const seenIds = new Set<ProjectId>()
+    let selectedProjectIdFromManifest: ProjectId | null = null
+
+    const fileEntries = Object.entries(files)
+    for (const [gistFileName, file] of fileEntries) {
+      if (!gistFileName.toLowerCase().endsWith('.json')) {
+        continue
+      }
+
+      const fileContent = await getGistFileContent(file, githubToken)
+      if (!fileContent) {
+        continue
+      }
+
+      const parsedPayload = JSON.parse(fileContent) as unknown
+
+      if (gistFileName === 'manifest.json') {
+        const manifest = parseGistManifestPayload(parsedPayload)
+        if (manifest) {
+          selectedProjectIdFromManifest = manifest.selectedProjectId
+        }
+        continue
+      }
+
+      const singlePayload = parsedPayload as Partial<{ project: unknown; board: unknown }>
+      if (!singlePayload.project || !isProjectItem(singlePayload.project)) {
+        continue
+      }
+
+      const project = sanitizeProjectItem(singlePayload.project)
+      if (!project || seenIds.has(project.id)) {
+        continue
+      }
+
+      seenIds.add(project.id)
+      projects.push(project)
+      boards[project.id] = mergeBoardWithDefault(singlePayload.board)
+    }
+
+    if (projects.length === 0) {
+      return { status: 'error' }
+    }
+
+    const selectedProjectId =
+      typeof selectedProjectIdFromManifest === 'string' && projects.some((project) => project.id === selectedProjectIdFromManifest)
+        ? selectedProjectIdFromManifest
+        : projects[0].id
+
+    return {
+      status: 'ok',
+      data: {
+        projects,
+        boards,
+        selectedProjectId,
+      },
+    }
   } catch {
-    return false
+    return { status: 'error' }
+  }
+}
+
+const createS3SourceDataAtUrl = async (
+  source: string,
+  data: InitialProjectData,
+): Promise<SourceSaveResult> => {
+  if (typeof window === 'undefined') {
+    return { status: 'error' }
+  }
+
+  const target = resolveDataSourceTarget(source)
+  if (!target || target.kind !== 's3') {
+    return { status: 'error' }
   }
 
   try {
-    const response = await fetch(sourceUrl, {
+    const response = await fetch(target.url, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -863,13 +1317,112 @@ const createSourceDataAtUrl = async (source: string, data: InitialProjectData): 
       body: JSON.stringify(data),
     })
 
-    return response.ok
+    if (response.status === 404) {
+      return { status: 'not-found' }
+    }
+
+    if (response.status === 401) {
+      return { status: 'auth-required' }
+    }
+
+    if (response.status === 403) {
+      return { status: 'forbidden' }
+    }
+
+    if (!response.ok) {
+      return { status: 'error' }
+    }
+
+    return { status: 'ok' }
   } catch {
-    return false
+    return { status: 'error' }
   }
 }
 
-const CONFIGURED_SOURCE_URL = loadConfiguredSourceUrl()
+const createGistSourceDataAtUrl = async (
+  source: string,
+  data: InitialProjectData,
+  githubToken: string | null,
+): Promise<SourceSaveResult> => {
+  if (typeof window === 'undefined') {
+    return { status: 'error' }
+  }
+
+  const target = resolveGistSourceInput(source)
+  if (!target || target.kind !== 'gist') {
+    return { status: 'error' }
+  }
+
+  if (!githubToken) {
+    return { status: 'auth-required' }
+  }
+
+  const filesPayload = data.projects.reduce(
+    (acc, project) => {
+      acc[`${project.id}.json`] = {
+        content: JSON.stringify(
+          {
+            project,
+            board: data.boards[project.id] ?? createDefaultOw64Board(),
+          },
+          null,
+          2,
+        ),
+      }
+      return acc
+    },
+    {} as Record<string, { content: string }>,
+  )
+
+  filesPayload['manifest.json'] = {
+    content: JSON.stringify(
+      {
+        selectedProjectId: data.selectedProjectId,
+      },
+      null,
+      2,
+    ),
+  }
+
+  try {
+    const response = await fetch(target.apiUrl, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `token ${githubToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        files: filesPayload,
+      }),
+    })
+
+    if (response.status === 404) {
+      return { status: 'not-found' }
+    }
+
+    if (response.status === 401) {
+      return { status: 'auth-required' }
+    }
+
+    if (response.status === 403) {
+      return { status: 'forbidden' }
+    }
+
+    if (!response.ok) {
+      return { status: 'error' }
+    }
+
+    return { status: 'ok' }
+  } catch {
+    return { status: 'error' }
+  }
+}
+
+const CONFIGURED_SOURCE_TYPE = loadConfiguredSourceType()
+const CONFIGURED_S3_SOURCE_URL = loadConfiguredS3SourceUrl()
+const CONFIGURED_GIST_SOURCE_URL = loadConfiguredGistSourceUrl()
+const CONFIGURED_GIST_TOKEN = loadConfiguredGistToken()
 const INITIAL_PROJECT_DATA = loadInitialProjectDataFromLocalStorage()
 
 const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
@@ -1667,18 +2220,44 @@ function App() {
   const [draftTitle, setDraftTitle] = useState('')
   const [draftSubtitle, setDraftSubtitle] = useState('')
   const [markdownImportFeedback, setMarkdownImportFeedback] = useState('')
-  const [sourceUrlDraft, setSourceUrlDraft] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
-  const [configuredSourceUrl, setConfiguredSourceUrl] = useState<string>(() => CONFIGURED_SOURCE_URL ?? '')
+  const [activeSourceType, setActiveSourceType] = useState<DataSourceType>(() => CONFIGURED_SOURCE_TYPE)
+  const [s3SourceUrlDraft, setS3SourceUrlDraft] = useState<string>(() => CONFIGURED_S3_SOURCE_URL ?? '')
+  const [gistSourceUrlDraft, setGistSourceUrlDraft] = useState<string>(() => CONFIGURED_GIST_SOURCE_URL ?? '')
+  const [gistTokenDraft, setGistTokenDraft] = useState<string>(() => CONFIGURED_GIST_TOKEN ?? '')
+  const [configuredS3SourceUrl, setConfiguredS3SourceUrl] = useState<string>(() => CONFIGURED_S3_SOURCE_URL ?? '')
+  const [configuredGistSourceUrl, setConfiguredGistSourceUrl] = useState<string>(() => CONFIGURED_GIST_SOURCE_URL ?? '')
+  const [configuredGistToken, setConfiguredGistToken] = useState<string>(() => CONFIGURED_GIST_TOKEN ?? '')
   const [querySourceUrl, setQuerySourceUrl] = useState<string | null>(() => getSourceUrlFromSearchParams())
-  const [sourceLoadFeedback, setSourceLoadFeedback] = useState('')
-  const [isSavingToSource, setIsSavingToSource] = useState(false)
+  const [localSourceFeedback, setLocalSourceFeedback] = useState('')
+  const [s3SourceFeedback, setS3SourceFeedback] = useState('')
+  const [gistSourceFeedback, setGistSourceFeedback] = useState('')
+  const [isSavingToS3Source, setIsSavingToS3Source] = useState(false)
+  const [isSavingToGistSource, setIsSavingToGistSource] = useState(false)
   const [isDragEnabled, setIsDragEnabled] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const effectiveSourceUrl = querySourceUrl ?? (configuredSourceUrl.trim() || null)
+  const effectiveS3SourceUrl = configuredS3SourceUrl.trim() || null
+  const effectiveGistSourceUrl = configuredGistSourceUrl.trim() || null
+  const effectiveGistToken = configuredGistToken.trim() || null
+  const querySourceTarget = querySourceUrl ? resolveDataSourceTarget(querySourceUrl) : null
+  const querySourceType: DataSourceType | null = querySourceTarget ? (querySourceTarget.kind === 'gist' ? 'gist' : 's3') : null
+  const effectiveSourceType = querySourceType ?? activeSourceType
+  const isQuerySourceOverride = Boolean(querySourceTarget)
+  const activeSourceSaveLabel =
+    effectiveSourceType === 'local' ? 'localStorage 自动保存' : effectiveSourceType === 's3' ? '保存到 S3' : '保存到 Gist'
+  const isSavingToActiveSource =
+    effectiveSourceType === 's3' ? isSavingToS3Source : effectiveSourceType === 'gist' ? isSavingToGistSource : false
+  const isSaveToActiveSourceDisabled =
+    effectiveSourceType === 'local'
+      ? true
+      : effectiveSourceType === 's3'
+        ? !effectiveS3SourceUrl || isSavingToS3Source
+        : !effectiveGistSourceUrl || isSavingToGistSource || !effectiveGistToken
+  const activeSourceFeedback =
+    effectiveSourceType === 'local' ? localSourceFeedback : effectiveSourceType === 's3' ? s3SourceFeedback : gistSourceFeedback
 
   const applyInitialProjectData = (data: InitialProjectData) => {
     setProjects(data.projects)
@@ -1697,42 +2276,101 @@ function App() {
     let disposed = false
 
     const hydrateFromSource = async () => {
-      if (!effectiveSourceUrl) {
+      const queryTarget = querySourceUrl ? resolveDataSourceTarget(querySourceUrl) : null
+
+      if (!queryTarget && effectiveSourceType === 'local') {
+        applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
+        setLocalSourceFeedback('当前使用 localStorage（自动保存）。')
+        return
+      }
+
+      if (
+        !queryTarget &&
+        ((effectiveSourceType === 's3' && !effectiveS3SourceUrl) ||
+          (effectiveSourceType === 'gist' && !effectiveGistSourceUrl))
+      ) {
         applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
         return
       }
 
-      const sourceData = await loadInitialProjectDataFromSource(effectiveSourceUrl)
+      const sourceData =
+        effectiveSourceType === 'gist'
+          ? await loadInitialProjectDataFromGistSource(queryTarget?.kind === 'gist' ? querySourceUrl ?? '' : effectiveGistSourceUrl ?? '', effectiveGistToken)
+          : await loadInitialProjectDataFromS3Source(queryTarget?.kind === 's3' ? queryTarget.url : effectiveS3SourceUrl ?? '')
       if (disposed) {
         return
       }
 
       if (sourceData.status === 'ok') {
         applyInitialProjectData(sourceData.data)
-        setSourceLoadFeedback('')
+        if (effectiveSourceType === 'gist') {
+          setGistSourceFeedback('')
+        } else {
+          setS3SourceFeedback('')
+        }
         return
       }
 
       const localData = loadInitialProjectDataFromLocalStorage()
       if (sourceData.status === 'not-found') {
-        const created = await createSourceDataAtUrl(effectiveSourceUrl, localData)
+        if (effectiveSourceType === 'gist') {
+          applyInitialProjectData(localData)
+          setGistSourceFeedback('Gist 不存在，已回退到 localStorage。')
+          return
+        }
+
+        const created = await createS3SourceDataAtUrl(effectiveS3SourceUrl ?? '', localData)
         if (disposed) {
           return
         }
 
-        if (created) {
+        if (created.status === 'ok') {
           applyInitialProjectData(localData)
-          setSourceLoadFeedback('S3 地址不存在，已自动创建并初始化默认数据。')
+          setS3SourceFeedback('S3 地址不存在，已自动创建并初始化默认数据。')
           return
         }
 
         applyInitialProjectData(localData)
-        setSourceLoadFeedback('S3 地址不存在，但创建失败，已回退到 localStorage。')
+        if (created.status === 'auth-required') {
+          setS3SourceFeedback('S3 地址不存在，且创建失败：需要认证凭据。已回退到 localStorage。')
+          return
+        }
+
+        if (created.status === 'forbidden') {
+          setS3SourceFeedback('S3 地址不存在，且创建失败：权限不足。已回退到 localStorage。')
+          return
+        }
+
+        setS3SourceFeedback('S3 地址不存在，但创建失败，已回退到 localStorage。')
+        return
+      }
+
+      if (sourceData.status === 'auth-required') {
+        applyInitialProjectData(localData)
+        if (effectiveSourceType === 'gist') {
+          setGistSourceFeedback('Gist 访问需要 GitHub Token（或 Token 无效），已回退到 localStorage。')
+        } else {
+          setS3SourceFeedback('S3 数据源访问需要认证，已回退到 localStorage。')
+        }
+        return
+      }
+
+      if (sourceData.status === 'forbidden') {
+        applyInitialProjectData(localData)
+        if (effectiveSourceType === 'gist') {
+          setGistSourceFeedback('Gist 访问被拒绝（可能权限不足或触发限流），已回退到 localStorage。')
+        } else {
+          setS3SourceFeedback('S3 数据源访问被拒绝，已回退到 localStorage。')
+        }
         return
       }
 
       applyInitialProjectData(localData)
-      setSourceLoadFeedback('数据源加载失败，已回退到 localStorage。')
+      if (effectiveSourceType === 'gist') {
+        setGistSourceFeedback('Gist 数据源加载失败，已回退到 localStorage。')
+      } else {
+        setS3SourceFeedback('S3 数据源加载失败，已回退到 localStorage。')
+      }
     }
 
     void hydrateFromSource()
@@ -1740,7 +2378,13 @@ function App() {
     return () => {
       disposed = true
     }
-  }, [effectiveSourceUrl])
+  }, [
+    effectiveGistSourceUrl,
+    effectiveGistToken,
+    effectiveS3SourceUrl,
+    effectiveSourceType,
+    querySourceUrl,
+  ])
 
   useEffect(() => {
     const handlePopState = () => {
@@ -1787,31 +2431,70 @@ function App() {
     setProjectDraftStatus(PROJECT_STATUS_OPTIONS[0])
   }
 
-  const handleSourceSave = () => {
-    const trimmedSource = sourceUrlDraft.trim()
+  const handleS3SourceSave = () => {
+    const trimmedSource = s3SourceUrlDraft.trim()
+    setActiveSourceType('s3')
+    persistConfiguredSourceType('s3')
+
     if (!trimmedSource) {
+      setConfiguredS3SourceUrl('')
+      persistConfiguredS3SourceUrl(null)
+      setQuerySourceUrl(syncSourceUrlToSearchParams(null))
+      setS3SourceFeedback('已清空 S3 地址，当前使用 localStorage。')
       return
     }
 
     try {
       const normalizedSource = new URL(trimmedSource, window.location.href).toString()
-      persistConfiguredSourceUrl(normalizedSource)
-      setConfiguredSourceUrl(normalizedSource)
-      setSourceUrlDraft(normalizedSource)
+      persistConfiguredS3SourceUrl(normalizedSource)
+      setConfiguredS3SourceUrl(normalizedSource)
+      setS3SourceUrlDraft(normalizedSource)
       setQuerySourceUrl(syncSourceUrlToSearchParams(normalizedSource))
-      setSourceLoadFeedback('已保存地址并同步到 URL 的 src 参数。')
+      setS3SourceFeedback('已保存 S3 配置并同步到 URL 的 src 参数。')
     } catch {
-      setSourceLoadFeedback('地址无效，请输入可访问的 S3 JSON URL。')
+      setS3SourceFeedback('S3 地址无效，请输入可访问的 JSON URL。')
     }
   }
 
-  const handleSaveToSource = async () => {
-    if (!effectiveSourceUrl) {
-      setSourceLoadFeedback('未配置可保存的 S3 地址。')
+  const handleGistSourceSave = () => {
+    const trimmedSource = gistSourceUrlDraft.trim()
+    const trimmedToken = gistTokenDraft.trim()
+
+    persistConfiguredGistToken(trimmedToken || null)
+    setConfiguredGistToken(trimmedToken)
+
+    setActiveSourceType('gist')
+    persistConfiguredSourceType('gist')
+
+    if (!trimmedSource) {
+      setConfiguredGistSourceUrl('')
+      persistConfiguredGistSourceUrl(null)
+      setQuerySourceUrl(syncSourceUrlToSearchParams(null))
+      setGistSourceFeedback('已清空 Gist 地址，当前使用 localStorage。')
       return
     }
 
-    setIsSavingToSource(true)
+    const resolvedTarget = resolveGistSourceInput(trimmedSource)
+    if (!resolvedTarget || resolvedTarget.kind !== 'gist') {
+      setGistSourceFeedback('Gist 地址无效，请输入 gist 链接、API 地址或 gistId。')
+      return
+    }
+
+    const normalizedSource = resolvedTarget.apiUrl
+    persistConfiguredGistSourceUrl(normalizedSource)
+    setConfiguredGistSourceUrl(normalizedSource)
+    setGistSourceUrlDraft(normalizedSource)
+    setQuerySourceUrl(syncSourceUrlToSearchParams(normalizedSource))
+    setGistSourceFeedback('已保存 Gist 配置并同步到 URL 的 src 参数。')
+  }
+
+  const handleSaveToS3Source = async () => {
+    if (!effectiveS3SourceUrl) {
+      setS3SourceFeedback('未配置可保存的 S3 地址。')
+      return
+    }
+
+    setIsSavingToS3Source(true)
 
     const dataToSave: InitialProjectData = {
       projects,
@@ -1819,14 +2502,76 @@ function App() {
       selectedProjectId,
     }
 
-    const saved = await createSourceDataAtUrl(effectiveSourceUrl, dataToSave)
-    if (saved) {
-      setSourceLoadFeedback(querySourceUrl ? '已保存到 URL src 指向的 S3 地址。' : '已保存到页面配置的 S3 地址。')
+    const saved = await createS3SourceDataAtUrl(effectiveS3SourceUrl, dataToSave)
+    if (saved.status === 'ok') {
+      setS3SourceFeedback('已保存到 S3 数据源。')
+    } else if (saved.status === 'auth-required') {
+      setS3SourceFeedback('保存到 S3 失败：需要认证凭据。')
+    } else if (saved.status === 'forbidden') {
+      setS3SourceFeedback('保存到 S3 失败：权限不足。')
+    } else if (saved.status === 'not-found') {
+      setS3SourceFeedback('保存到 S3 失败：地址不存在。')
     } else {
-      setSourceLoadFeedback('保存到 S3 失败，请检查地址权限、CORS 或签名配置。')
+      setS3SourceFeedback('保存到 S3 失败，请检查地址权限、CORS 或网络配置。')
     }
 
-    setIsSavingToSource(false)
+    setIsSavingToS3Source(false)
+  }
+
+  const handleSaveToGistSource = async () => {
+    if (!effectiveGistSourceUrl) {
+      setGistSourceFeedback('未配置可保存的 Gist 地址。')
+      return
+    }
+
+    setIsSavingToGistSource(true)
+
+    const dataToSave: InitialProjectData = {
+      projects,
+      boards: boardByProject,
+      selectedProjectId,
+    }
+
+    const saved = await createGistSourceDataAtUrl(effectiveGistSourceUrl, dataToSave, effectiveGistToken)
+    if (saved.status === 'ok') {
+      setGistSourceFeedback('已保存到 Gist 数据源。')
+    } else if (saved.status === 'auth-required') {
+      setGistSourceFeedback('保存到 Gist 需要有效的 GitHub Token。')
+    } else if (saved.status === 'forbidden') {
+      setGistSourceFeedback('保存到 Gist 被拒绝：请检查 Token 权限。')
+    } else if (saved.status === 'not-found') {
+      setGistSourceFeedback('保存到 Gist 失败：Gist 不存在。')
+    } else {
+      setGistSourceFeedback('保存到 Gist 失败，请检查网络或 API 限流。')
+    }
+
+    setIsSavingToGistSource(false)
+  }
+
+  const handleSaveToActiveSource = async () => {
+    if (effectiveSourceType === 's3') {
+      await handleSaveToS3Source()
+      return
+    }
+
+    if (effectiveSourceType === 'gist') {
+      await handleSaveToGistSource()
+      return
+    }
+
+    setLocalSourceFeedback('当前使用 localStorage 自动保存，无需手动保存。')
+  }
+
+  const handleActiveSourceTypeChange = (nextType: DataSourceType) => {
+    setActiveSourceType(nextType)
+    persistConfiguredSourceType(nextType)
+    setQuerySourceUrl(syncSourceUrlToSearchParams(null))
+    if (nextType === 'local') {
+      setLocalSourceFeedback('已切换到 localStorage（自动保存）。')
+      return
+    }
+
+    setLocalSourceFeedback('')
   }
 
   const handleViewChange = (nextView: ViewMode) => {
@@ -2406,37 +3151,28 @@ function App() {
                 <span className="nav-label">项目管理</span>
                 <span className="nav-desc">项目列表与管理入口</span>
               </button>
+              <button
+                type="button"
+                className={`nav-item ${view === 'settings' ? 'is-active' : ''}`}
+                onClick={() => handleViewChange('settings')}
+                aria-current={view === 'settings' ? 'page' : undefined}
+                data-short="设"
+                title="设置"
+              >
+                <span className="nav-label">设置</span>
+                <span className="nav-desc">数据源与同步配置</span>
+              </button>
             </div>
           </nav>
 
-          <section className="sidebar-section" aria-label="Data source configuration">
-            <p className="nav-title">Data Source</p>
-            <label className="project-field" htmlFor="data-source-url">
-              <span>S3 地址（JSON）</span>
-              <input
-                id="data-source-url"
-                className="project-input"
-                value={sourceUrlDraft}
-                onChange={(event) => setSourceUrlDraft(event.target.value)}
-                placeholder="https://bucket.s3.region.amazonaws.com/data.json"
-              />
-            </label>
+          <section className="sidebar-section" aria-label="Data sync actions">
+            <p className="nav-title">Data Sync</p>
             <div className="project-actions">
-              <button type="button" className="mandala-action" onClick={handleSourceSave} disabled={!sourceUrlDraft.trim()}>
-                保存并加载
-              </button>
-              <button type="button" className="mandala-action" onClick={handleSaveToSource} disabled={!effectiveSourceUrl || isSavingToSource}>
-                {isSavingToSource ? '保存中...' : '保存到 S3'}
+              <button type="button" className="mandala-action" onClick={handleSaveToActiveSource} disabled={isSaveToActiveSourceDisabled}>
+                {isSavingToActiveSource ? '保存中...' : activeSourceSaveLabel}
               </button>
             </div>
-            {querySourceUrl ? (
-              <p className="mandala-path sidebar-mandala-path">当前来源：URL src 参数（优先）</p>
-            ) : configuredSourceUrl.trim() ? (
-              <p className="mandala-path sidebar-mandala-path">当前来源：页面配置地址</p>
-            ) : (
-              <p className="mandala-path sidebar-mandala-path">当前来源：localStorage</p>
-            )}
-            {sourceLoadFeedback && <p className="mandala-path sidebar-mandala-path">{sourceLoadFeedback}</p>}
+            {activeSourceFeedback && <p className="mandala-path sidebar-mandala-path">{activeSourceFeedback}</p>}
           </section>
 
           {isProjectDetailView && selectedProject && (
@@ -2791,6 +3527,33 @@ function App() {
                   </button>
                 )}
               </section>
+            </>
+          )}
+
+          {view === 'settings' && (
+            <>
+              <section className="content-header">
+                <p className="content-eyebrow">Settings</p>
+                <h1 className="content-title">设置</h1>
+                <p className="content-desc">统一管理 localStorage、S3 与 GitHub Gist 的数据源配置。</p>
+              </section>
+
+              <DataSourceSettingsPanel
+                activeSourceType={activeSourceType}
+                isQuerySourceOverride={isQuerySourceOverride}
+                onActiveSourceTypeChange={handleActiveSourceTypeChange}
+                s3SourceUrlDraft={s3SourceUrlDraft}
+                gistSourceUrlDraft={gistSourceUrlDraft}
+                gistTokenDraft={gistTokenDraft}
+                onS3SourceUrlDraftChange={setS3SourceUrlDraft}
+                onGistSourceUrlDraftChange={setGistSourceUrlDraft}
+                onGistTokenDraftChange={setGistTokenDraft}
+                onSaveS3Config={handleS3SourceSave}
+                onSaveGistConfig={handleGistSourceSave}
+                localSourceFeedback={localSourceFeedback}
+                s3SourceFeedback={s3SourceFeedback}
+                gistSourceFeedback={gistSourceFeedback}
+              />
             </>
           )}
 
