@@ -146,10 +146,57 @@
   background: var(--surface-2);
 }
 
+.nav-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .nav-item.is-active {
   border-color: #1b4332;
   background: linear-gradient(135deg, rgba(27, 67, 50, 0.12), rgba(8, 28, 21, 0.03));
   box-shadow: var(--shadow-tight);
+}
+
+.nav-item-save.is-muted {
+  color: var(--text-muted);
+}
+
+.nav-item-save.is-clean {
+  color: #2f6f44;
+  border-color: color-mix(in srgb, #2f6f44 35%, var(--border-strong) 65%);
+  background: color-mix(in srgb, #2f6f44 8%, var(--surface-2) 92%);
+}
+
+.nav-item-save.is-dirty {
+  color: #9a3412;
+  border-color: color-mix(in srgb, #9a3412 40%, var(--border-strong) 60%);
+  background: color-mix(in srgb, #9a3412 10%, var(--surface-2) 90%);
+}
+
+.nav-item-save.is-saving {
+  color: #2563eb;
+  border-color: color-mix(in srgb, #2563eb 40%, var(--border-strong) 60%);
+  background: color-mix(in srgb, #2563eb 10%, var(--surface-2) 90%);
+}
+
+.nav-item-save.is-saving .nav-icon {
+  animation: save-spin 0.9s linear infinite;
+}
+
+@keyframes save-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-item-save.is-saving .nav-icon {
+    animation: none;
+  }
 }
 
 .nav-icon {

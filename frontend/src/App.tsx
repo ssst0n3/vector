@@ -2347,6 +2347,7 @@ function App() {
       text: '同步状态：有待保存数据',
     }
   }, [currentDataFingerprint, effectiveSourceType, isSavingToActiveSource, lastSyncedFingerprintBySource])
+  const collapsedSaveIconTone = isSavingToActiveSource ? 'saving' : activeSourceSyncStatus.tone
   const hasPendingRemoteChanges = useMemo(() => {
     if (effectiveSourceType === 'local') {
       return false
@@ -3296,6 +3297,22 @@ function App() {
                 <span className="nav-label">设置</span>
                 <span className="nav-desc">数据源与同步配置</span>
               </button>
+              {isSidebarCollapsed && (
+                <button
+                  type="button"
+                  className={`nav-item nav-item-save is-${collapsedSaveIconTone}`}
+                  onClick={handleSaveToActiveSource}
+                  disabled={isSaveToActiveSourceDisabled}
+                  aria-label={isSavingToActiveSource ? '保存中...' : activeSourceSaveLabel}
+                  title={isSavingToActiveSource ? '保存中...' : activeSourceSaveLabel}
+                >
+                  <svg aria-hidden="true" className="nav-icon" viewBox="0 0 24 24" fill="none">
+                    <path d="M6 4.5H16.5L19.5 7.5V19.25C19.5 19.66 19.16 20 18.75 20H5.25C4.84 20 4.5 19.66 4.5 19.25V5.25C4.5 4.84 4.84 4.5 5.25 4.5H6Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M8 4.5V10H15.5V4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M8 20V14H16V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
             </div>
           </nav>
 
@@ -3990,6 +4007,7 @@ function App() {
                                     onChange={(event) => setDraftTitle(event.target.value)}
                                     className="mandala-input"
                                     placeholder="输入目标"
+                                    autoFocus
                                   />
                                 </label>
                                 <label className="mandala-field" htmlFor={`subtitle-${cell.id}`}>
@@ -4208,6 +4226,7 @@ function App() {
                                       onChange={(event) => setDraftTitle(event.target.value)}
                                       className="mandala-input"
                                       placeholder="输入目标"
+                                      autoFocus
                                     />
                                   </label>
                                   <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
@@ -4335,6 +4354,7 @@ function App() {
                                     onChange={(event) => setDraftTitle(event.target.value)}
                                     className="mandala-input"
                                     placeholder="输入目标"
+                                    autoFocus
                                   />
                                 </label>
                                 <label className="mandala-field" htmlFor={`subtitle-${inputIdSuffix}`}>
