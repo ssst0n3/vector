@@ -3,27 +3,6 @@ import type { ChangeEvent, DragEvent } from 'react'
 import DataSourceSettingsPanel from './components/DataSourceSettingsPanel'
 import './App.css'
 
-const LEGACY_DEFAULT_PROJECTS = [
-  {
-    id: 'atlas',
-    name: 'Atlas Initiative',
-    summary: '跨团队目标对齐与路线拆解',
-    status: 'Active',
-  },
-  {
-    id: 'harbor',
-    name: 'Harbor Systems',
-    summary: '流程优化与交付节奏重塑',
-    status: 'Planning',
-  },
-  {
-    id: 'northstar',
-    name: 'Northstar Program',
-    summary: '关键指标与增长闭环设计',
-    status: 'In review',
-  },
-] as const
-
 const PROJECT_STATUS_OPTIONS = ['Active', 'Planning', 'In review', 'Paused', 'Done'] as const
 
 const PROJECT_TABS = [
@@ -198,7 +177,6 @@ type DraggableCardTarget =
 const NEW_STORAGE_KEY_PREFIX = 'ow64:board:'
 const LEGACY_STORAGE_KEY_PREFIX = 'ow64:mandala:'
 const PROJECT_LIST_STORAGE_KEY = 'project:list:v1'
-const LEGACY_PROJECT_META_STORAGE_KEY = 'project:meta:v1'
 const LEGACY_DATA_SOURCE_URL_STORAGE_KEY = 'ow64:data-source:url'
 const LEGACY_DATA_SOURCE_GITHUB_TOKEN_STORAGE_KEY = 'ow64:data-source:github-token'
 const DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY = 'ow64:data-source:active-type'
@@ -348,128 +326,49 @@ const createDefaultOw64Board = (): Ow64Board => {
   }
 }
 
-const SYSTEM_TEMPLATE_PROJECT: ProjectItem = {
-  id: 'shohei-ow64',
-  name: '大谷翔平的OW64',
-  summary: '大谷翔平高中时期 OW64 中文模板（中心目标 + 8 核心要素 + 64 行动）',
-  status: 'Active',
-}
-
-const createShoheiOw64TemplateBoard = (): Ow64Board => {
-  const board = createDefaultOw64Board()
-
-  board.core = {
-    title: '8 支球队第一指名',
-    subtitle: '原文：ドラ1 8球団',
+const createEmptyOw64Board = (): Ow64Board => {
+  const emptyCell: CellContent = {
+    title: '',
+    subtitle: '',
   }
 
-  const applyPillarTemplate = (pillarId: PillarId, title: string, subtitle: string, actions: string[]) => {
-    board.pillars[pillarId] = {
-      title,
-      subtitle,
+  const pillars = PILLAR_CELLS.reduce((acc, cell) => {
+    acc[cell.id] = {
+      title: '',
+      subtitle: '',
     }
-    board.drills[pillarId].core = {
-      title,
-      subtitle,
-    }
+    return acc
+  }, {} as Record<PillarId, CellContent>)
 
-    ACTION_LAYOUT.forEach((action, index) => {
-      board.drills[pillarId].actions[action.id] = {
-        title: actions[index] ?? `${title} 行动 ${index + 1}`,
-        subtitle: action.subtitle,
+  const drills = PILLAR_CELLS.reduce((pillarAcc, cell) => {
+    const actions = ACTION_LAYOUT.reduce((actionAcc, action) => {
+      actionAcc[action.id] = {
+        title: '',
+        subtitle: '',
       }
-    })
+      return actionAcc
+    }, {} as Record<ActionId, CellContent>)
+
+    pillarAcc[cell.id] = {
+      core: {
+        title: '',
+        subtitle: '',
+      },
+      actions,
+      children: {},
+      visibleCore: true,
+      visibleActions: createActionVisibilityMap(false),
+    }
+    return pillarAcc
+  }, {} as Record<PillarId, DrillNode>)
+
+  return {
+    core: emptyCell,
+    pillars,
+    drills,
+    visibleCore: true,
+    visiblePillars: createPillarVisibilityMap(false),
   }
-
-  applyPillarTemplate('w1', '体能建设', '原文：体づくり', [
-    '身体保养',
-    '吃营养补充品',
-    '前深蹲 90kg',
-    '柔软度',
-    '耐力',
-    '关节活动度',
-    '后深蹲 130kg',
-    '饮食：晚 7 碗、早 3 碗',
-  ])
-
-  applyPillarTemplate('w2', '控球', '原文：コントロール', [
-    '改善跨步向内问题',
-    '强化核心肌群',
-    '保持身体轴心稳定',
-    '放球点稳定',
-    '身体不要过早打开',
-    '消除不安感',
-    '强化下半身',
-    '心理与情绪控制',
-  ])
-
-  applyPillarTemplate('w3', '球威 / 犀利度', '原文：キレ', [
-    '制造投球角度',
-    '由上往下扣球',
-    '放球点前移',
-    '下半身主导发力',
-    '提升转速',
-    '关节活动度',
-    '在身体前方出手',
-    '不僵硬死用力',
-  ])
-
-  applyPillarTemplate('w4', '心理素质', '原文：メンタル', [
-    '拥有明确目标与目的',
-    '不因一时成败患得患失',
-    '头脑冷静，内心热烈',
-    '不被周围氛围带走',
-    '体贴队友',
-    '对胜利的执念',
-    '情绪不起伏',
-    '逆境中更强',
-  ])
-
-  applyPillarTemplate('w5', '球速 160 公里', '原文：スピード160km/h', [
-    '以轴心旋转',
-    '强化下半身',
-    '增加体重',
-    '强化肩部周边肌群',
-    '增加投球数量',
-    '平飞传接球练习',
-    '关节活动度',
-    '强化核心肌群',
-  ])
-
-  applyPillarTemplate('w6', '品格修养', '原文：人間性', [
-    '感性',
-    '成为受人喜爱的人',
-    '计划性',
-    '感恩',
-    '坚持力',
-    '成为值得信赖的人',
-    '礼仪',
-    '体贴他人',
-  ])
-
-  applyPillarTemplate('w7', '运气', '原文：運', [
-    '主动打招呼',
-    '捡垃圾',
-    '打扫房间',
-    '对裁判保持礼貌',
-    '阅读书籍',
-    '成为被支持的人',
-    '正向思考',
-    '爱惜球具',
-  ])
-
-  applyPillarTemplate('w8', '变化球', '原文：変化球', [
-    '增加抢好球数球种',
-    '投球纵深感',
-    '好球带进坏球带的引诱控球',
-    '决胜球',
-    '滑球犀利度',
-    '指叉球完成度',
-    '对左打者决胜球',
-    '慢速曲球',
-  ])
-
-  return board
 }
 
 const isCellContent = (value: unknown): value is CellContent => {
@@ -848,23 +747,6 @@ const persistConfiguredGistToken = (token: string | null) => {
   window.localStorage.setItem(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY, token)
 }
 
-const hasLegacyProjectEvidence = (): boolean => {
-  if (typeof window === 'undefined') {
-    return false
-  }
-
-  if (window.localStorage.getItem(LEGACY_PROJECT_META_STORAGE_KEY)) {
-    return true
-  }
-
-  return LEGACY_DEFAULT_PROJECTS.some((project) => {
-    return (
-      window.localStorage.getItem(`${NEW_STORAGE_KEY_PREFIX}${project.id}`) !== null ||
-      window.localStorage.getItem(`${LEGACY_STORAGE_KEY_PREFIX}${project.id}`) !== null
-    )
-  })
-}
-
 const loadProjectList = (): ProjectItem[] => {
   if (typeof window === 'undefined') {
     return []
@@ -901,49 +783,7 @@ const loadProjectList = (): ProjectItem[] => {
     }
   }
 
-  if (!hasLegacyProjectEvidence()) {
-    return []
-  }
-
-  const migrated: ProjectItem[] = LEGACY_DEFAULT_PROJECTS.map((project) => ({
-    id: project.id,
-    name: project.name,
-    summary: project.summary,
-    status: project.status,
-  }))
-
-  const rawLegacyMeta = window.localStorage.getItem(LEGACY_PROJECT_META_STORAGE_KEY)
-  if (rawLegacyMeta) {
-    try {
-      const parsed = JSON.parse(rawLegacyMeta) as Partial<Record<(typeof LEGACY_DEFAULT_PROJECTS)[number]['id'], Partial<ProjectItem>>>
-
-      for (const project of migrated) {
-        const incoming = parsed[project.id as (typeof LEGACY_DEFAULT_PROJECTS)[number]['id']]
-        if (!incoming) {
-          continue
-        }
-
-        const merged: ProjectItem = {
-          id: project.id,
-          name: typeof incoming.name === 'string' ? incoming.name : project.name,
-          summary: typeof incoming.summary === 'string' ? incoming.summary : project.summary,
-          status: typeof incoming.status === 'string' ? incoming.status : project.status,
-        }
-
-        const sanitized = sanitizeProjectItem(merged)
-        if (sanitized) {
-          project.name = sanitized.name
-          project.summary = sanitized.summary
-          project.status = sanitized.status
-        }
-      }
-    } catch {
-      // Ignore malformed legacy data and keep legacy defaults.
-    }
-  }
-
-  persistProjectList(migrated)
-  return migrated
+  return []
 }
 
 type InitialProjectData = {
@@ -952,55 +792,15 @@ type InitialProjectData = {
   selectedProjectId: ProjectId | null
 }
 
-const ensureSystemTemplateProjectData = (
-  projects: ProjectItem[],
-  boards: Record<ProjectId, Ow64Board>,
-): { projects: ProjectItem[]; boards: Record<ProjectId, Ow64Board> } => {
-  const hasTemplateProject = projects.some((project) => project.id === SYSTEM_TEMPLATE_PROJECT.id)
-  const hasTemplateBoard = Boolean(boards[SYSTEM_TEMPLATE_PROJECT.id])
-
-  if (hasTemplateProject && hasTemplateBoard) {
-    return { projects, boards }
-  }
-
-  const nextProjects = hasTemplateProject
-    ? projects
-    : [
-        ...projects,
-        {
-          ...SYSTEM_TEMPLATE_PROJECT,
-        },
-      ]
-
-  const nextBoards = hasTemplateBoard
-    ? boards
-    : {
-        ...boards,
-        [SYSTEM_TEMPLATE_PROJECT.id]: createShoheiOw64TemplateBoard(),
-      }
-
-  persistProjectList(nextProjects)
-  if (!hasTemplateBoard) {
-    persistOw64Board(SYSTEM_TEMPLATE_PROJECT.id, nextBoards[SYSTEM_TEMPLATE_PROJECT.id])
-  }
-
-  return {
-    projects: nextProjects,
-    boards: nextBoards,
-  }
-}
-
 const loadInitialProjectDataFromLocalStorage = (): InitialProjectData => {
-  const baseProjects = loadProjectList()
-  const baseBoards = baseProjects.reduce(
+  const projects = loadProjectList()
+  const boards = projects.reduce(
     (acc, project) => {
       acc[project.id] = loadOw64Board(project.id)
       return acc
     },
     {} as Record<ProjectId, Ow64Board>,
   )
-
-  const { projects, boards } = ensureSystemTemplateProjectData(baseProjects, baseBoards)
 
   return {
     projects,
@@ -2875,7 +2675,7 @@ function App() {
       setProjects(nextProjects)
       persistProjectList(nextProjects)
 
-      const initialBoard = createDefaultOw64Board()
+      const initialBoard = createEmptyOw64Board()
       setBoardByProject((prev) => ({
         ...prev,
         [newProjectId]: initialBoard,
