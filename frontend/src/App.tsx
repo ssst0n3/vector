@@ -184,6 +184,7 @@ const DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY = 'ow64:data-source:active-type'
 const DATA_SOURCE_S3_URL_STORAGE_KEY = 'ow64:data-source:s3:url'
 const DATA_SOURCE_GIST_URL_STORAGE_KEY = 'ow64:data-source:gist:url'
 const DATA_SOURCE_GIST_TOKEN_STORAGE_KEY = 'ow64:data-source:gist:token'
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ow64:sidebar:collapsed'
 const DEFAULT_GIST_FILE_NAME = 'ow64-data.json'
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
@@ -746,6 +747,31 @@ const persistConfiguredGistToken = (token: string | null) => {
   }
 
   window.localStorage.setItem(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY, token)
+}
+
+const loadSidebarCollapsedPreference = (): boolean => {
+  if (typeof window === 'undefined') {
+    return true
+  }
+
+  const saved = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+  if (saved === 'true') {
+    return true
+  }
+
+  if (saved === 'false') {
+    return false
+  }
+
+  return true
+}
+
+const persistSidebarCollapsedPreference = (collapsed: boolean): void => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? 'true' : 'false')
 }
 
 const loadProjectList = (): ProjectItem[] => {
@@ -2279,7 +2305,7 @@ function App() {
     gist: null,
   })
   const [isDragEnabled, setIsDragEnabled] = useState(false)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsedPreference())
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -2537,6 +2563,10 @@ function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [hasPendingRemoteChanges])
+
+  useEffect(() => {
+    persistSidebarCollapsedPreference(isSidebarCollapsed)
+  }, [isSidebarCollapsed])
 
   const selectedProject = useMemo(
     () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
