@@ -370,6 +370,16 @@
   border-style: dashed;
 }
 
+.project-card-create .project-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.project-card-create .project-editor,
+.project-card-create .project-field {
+  width: 100%;
+}
+
 .project-card-create-trigger {
   position: relative;
   min-height: 180px;

@@ -1384,18 +1384,6 @@ const loadInitialProjectDataFromGistSource = async (source: string, githubToken:
       return { status: 'ok', data: explicitParsed }
     }
 
-    const legacyFile = pickGistFile(files, null)
-    if (legacyFile) {
-      const legacyContent = await getGistFileContent(legacyFile, githubToken)
-      if (legacyContent) {
-        const legacyParsedPayload = JSON.parse(legacyContent) as unknown
-        const legacyParsed = parseInitialProjectDataFromSource(legacyParsedPayload)
-        if (legacyParsed) {
-          return { status: 'ok', data: legacyParsed }
-        }
-      }
-    }
-
     const projects: ProjectItem[] = []
     const boards: Record<ProjectId, Ow64Board> = {}
     const seenIds = new Set<ProjectId>()
@@ -1437,23 +1425,35 @@ const loadInitialProjectDataFromGistSource = async (source: string, githubToken:
       boards[project.id] = mergeBoardWithDefault(singlePayload.board)
     }
 
-    if (projects.length === 0) {
-      return { status: 'error' }
+    if (projects.length > 0) {
+      const selectedProjectId =
+        typeof selectedProjectIdFromManifest === 'string' && projects.some((project) => project.id === selectedProjectIdFromManifest)
+          ? selectedProjectIdFromManifest
+          : projects[0].id
+
+      return {
+        status: 'ok',
+        data: {
+          projects,
+          boards,
+          selectedProjectId,
+        },
+      }
     }
 
-    const selectedProjectId =
-      typeof selectedProjectIdFromManifest === 'string' && projects.some((project) => project.id === selectedProjectIdFromManifest)
-        ? selectedProjectIdFromManifest
-        : projects[0].id
-
-    return {
-      status: 'ok',
-      data: {
-        projects,
-        boards,
-        selectedProjectId,
-      },
+    const legacyFile = pickGistFile(files, null)
+    if (legacyFile) {
+      const legacyContent = await getGistFileContent(legacyFile, githubToken)
+      if (legacyContent) {
+        const legacyParsedPayload = JSON.parse(legacyContent) as unknown
+        const legacyParsed = parseInitialProjectDataFromSource(legacyParsedPayload)
+        if (legacyParsed) {
+          return { status: 'ok', data: legacyParsed }
+        }
+      }
     }
+
+    return { status: 'error' }
   } catch {
     return { status: 'error' }
   }
@@ -1535,7 +1535,7 @@ const createGistSourceDataAtUrl = async (
       }
       return acc
     },
-    {} as Record<string, { content: string }>,
+    {} as Record<string, { content: string } | null>,
   )
 
   filesPayload['manifest.json'] = {
@@ -1548,7 +1548,69 @@ const createGistSourceDataAtUrl = async (
     ),
   }
 
+  filesPayload[DEFAULT_GIST_FILE_NAME] = {
+    content: JSON.stringify(data, null, 2),
+  }
+
   try {
+    const currentResponse = await fetch(target.apiUrl, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `token ${githubToken}`,
+      },
+    })
+
+    if (currentResponse.status === 404) {
+      return { status: 'not-found' }
+    }
+
+    if (currentResponse.status === 401) {
+      return { status: 'auth-required' }
+    }
+
+    if (currentResponse.status === 403) {
+      return { status: 'forbidden' }
+    }
+
+    if (!currentResponse.ok) {
+      return { status: 'error' }
+    }
+
+    const currentPayload = (await currentResponse.json()) as Partial<{ files: unknown }>
+    const currentFiles = extractGistFilePayload(currentPayload.files)
+    if (currentFiles) {
+      const currentProjectIds = new Set(data.projects.map((project) => project.id))
+      for (const [gistFileName, file] of Object.entries(currentFiles)) {
+        if (!gistFileName.toLowerCase().endsWith('.json')) {
+          continue
+        }
+
+        if (gistFileName === 'manifest.json' || gistFileName === DEFAULT_GIST_FILE_NAME) {
+          continue
+        }
+
+        const fileContent = await getGistFileContent(file, githubToken)
+        if (!fileContent) {
+          continue
+        }
+
+        const parsedPayload = JSON.parse(fileContent) as unknown
+        const singlePayload = parsedPayload as Partial<{ project: unknown }>
+        if (!singlePayload.project || !isProjectItem(singlePayload.project)) {
+          continue
+        }
+
+        const project = sanitizeProjectItem(singlePayload.project)
+        if (!project) {
+          continue
+        }
+
+        if (!currentProjectIds.has(project.id)) {
+          filesPayload[gistFileName] = null
+        }
+      }
+    }
+
     const response = await fetch(target.apiUrl, {
       method: 'PATCH',
       headers: {
@@ -2444,7 +2506,7 @@ function App() {
 
       if (!queryTarget && effectiveSourceType === 'local') {
         applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
-        setLocalSourceFeedback('当前使用 localStorage（自动保存）。')
+        setLocalSourceFeedback('加载成功：当前使用 localStorage（自动保存）。')
         return
       }
 
@@ -2454,6 +2516,11 @@ function App() {
           (effectiveSourceType === 'gist' && !effectiveGistSourceUrl))
       ) {
         applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
+        if (effectiveSourceType === 'gist') {
+          setGistSourceFeedback('加载失败：未配置 Gist 地址，已回退到 localStorage。')
+        } else {
+          setS3SourceFeedback('加载失败：未配置 S3 地址，已回退到 localStorage。')
+        }
         return
       }
 
@@ -2468,9 +2535,9 @@ function App() {
       if (sourceData.status === 'ok') {
         applyInitialProjectData(sourceData.data)
         if (effectiveSourceType === 'gist') {
-          setGistSourceFeedback('')
+          setGistSourceFeedback('加载成功：已从 Gist 数据源加载。')
         } else {
-          setS3SourceFeedback('')
+          setS3SourceFeedback('加载成功：已从 S3 数据源加载。')
         }
         return
       }
@@ -2479,7 +2546,7 @@ function App() {
       if (sourceData.status === 'not-found') {
         if (effectiveSourceType === 'gist') {
           applyInitialProjectData(localData)
-          setGistSourceFeedback('Gist 不存在，已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：Gist 不存在，已回退到 localStorage。')
           return
         }
 
@@ -2490,31 +2557,31 @@ function App() {
 
         if (created.status === 'ok') {
           applyInitialProjectData(localData)
-          setS3SourceFeedback('S3 地址不存在，已自动创建并初始化默认数据。')
+          setS3SourceFeedback('加载成功：S3 地址不存在，已自动创建并加载 localStorage 数据。')
           return
         }
 
         applyInitialProjectData(localData)
         if (created.status === 'auth-required') {
-          setS3SourceFeedback('S3 地址不存在，且创建失败：需要认证凭据。已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 地址不存在且创建失败（需要认证凭据），已回退到 localStorage。')
           return
         }
 
         if (created.status === 'forbidden') {
-          setS3SourceFeedback('S3 地址不存在，且创建失败：权限不足。已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 地址不存在且创建失败（权限不足），已回退到 localStorage。')
           return
         }
 
-        setS3SourceFeedback('S3 地址不存在，但创建失败，已回退到 localStorage。')
+        setS3SourceFeedback('加载失败：S3 地址不存在且创建失败，已回退到 localStorage。')
         return
       }
 
       if (sourceData.status === 'auth-required') {
         applyInitialProjectData(localData)
         if (effectiveSourceType === 'gist') {
-          setGistSourceFeedback('Gist 访问需要 GitHub Token（或 Token 无效），已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：Gist 访问需要 GitHub Token（或 Token 无效），已回退到 localStorage。')
         } else {
-          setS3SourceFeedback('S3 数据源访问需要认证，已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 数据源访问需要认证，已回退到 localStorage。')
         }
         return
       }
@@ -2522,18 +2589,18 @@ function App() {
       if (sourceData.status === 'forbidden') {
         applyInitialProjectData(localData)
         if (effectiveSourceType === 'gist') {
-          setGistSourceFeedback('Gist 访问被拒绝（可能权限不足或触发限流），已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：Gist 访问被拒绝（可能权限不足或触发限流），已回退到 localStorage。')
         } else {
-          setS3SourceFeedback('S3 数据源访问被拒绝，已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 数据源访问被拒绝，已回退到 localStorage。')
         }
         return
       }
 
       applyInitialProjectData(localData)
       if (effectiveSourceType === 'gist') {
-        setGistSourceFeedback('Gist 数据源加载失败，已回退到 localStorage。')
+        setGistSourceFeedback('加载失败：Gist 数据源加载失败，已回退到 localStorage。')
       } else {
-        setS3SourceFeedback('S3 数据源加载失败，已回退到 localStorage。')
+        setS3SourceFeedback('加载失败：S3 数据源加载失败，已回退到 localStorage。')
       }
     }
 
@@ -2684,7 +2751,7 @@ function App() {
 
   const handleSaveToGistSource = async () => {
     if (!effectiveGistSourceUrl) {
-      setGistSourceFeedback('未配置可保存的 Gist 地址。')
+      setGistSourceFeedback('保存失败：未配置可保存的 Gist 地址。')
       return
     }
 
@@ -2698,15 +2765,15 @@ function App() {
 
     const saved = await createGistSourceDataAtUrl(effectiveGistSourceUrl, dataToSave, effectiveGistToken)
     if (saved.status === 'ok') {
-      setGistSourceFeedback('已保存到 Gist 数据源。')
+      setGistSourceFeedback('保存成功：已保存到 Gist 数据源。')
     } else if (saved.status === 'auth-required') {
-      setGistSourceFeedback('保存到 Gist 需要有效的 GitHub Token。')
+      setGistSourceFeedback('保存失败：需要有效的 GitHub Token。')
     } else if (saved.status === 'forbidden') {
-      setGistSourceFeedback('保存到 Gist 被拒绝：请检查 Token 权限。')
+      setGistSourceFeedback('保存失败：保存到 Gist 被拒绝，请检查 Token 权限。')
     } else if (saved.status === 'not-found') {
-      setGistSourceFeedback('保存到 Gist 失败：Gist 不存在。')
+      setGistSourceFeedback('保存失败：Gist 不存在。')
     } else {
-      setGistSourceFeedback('保存到 Gist 失败，请检查网络或 API 限流。')
+      setGistSourceFeedback('保存失败：请检查网络或 API 限流。')
     }
 
     setIsSavingToGistSource(false)
