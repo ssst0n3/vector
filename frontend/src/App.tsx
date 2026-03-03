@@ -2347,6 +2347,22 @@ function App() {
       text: '同步状态：有待保存数据',
     }
   }, [currentDataFingerprint, effectiveSourceType, isSavingToActiveSource, lastSyncedFingerprintBySource])
+  const hasPendingRemoteChanges = useMemo(() => {
+    if (effectiveSourceType === 'local') {
+      return false
+    }
+
+    if (isSavingToActiveSource) {
+      return true
+    }
+
+    const lastSyncedFingerprint = lastSyncedFingerprintBySource[effectiveSourceType]
+    if (!lastSyncedFingerprint) {
+      return false
+    }
+
+    return lastSyncedFingerprint !== currentDataFingerprint
+  }, [currentDataFingerprint, effectiveSourceType, isSavingToActiveSource, lastSyncedFingerprintBySource])
 
   const applyInitialProjectData = (data: InitialProjectData) => {
     setProjects(data.projects)
@@ -2504,6 +2520,22 @@ function App() {
       window.removeEventListener('popstate', handlePopState)
     }
   }, [])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasPendingRemoteChanges) {
+        return
+      }
+
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [hasPendingRemoteChanges])
 
   const selectedProject = useMemo(
     () => (selectedProjectId ? projects.find((project) => project.id === selectedProjectId) : undefined),
