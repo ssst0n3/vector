@@ -163,6 +163,7 @@ type TaskItem = {
   id: string
   projectId: ProjectId
   title: string
+  description: string
   status: TaskStatus
   linkedTarget: EditingTarget
   createdAt: string
@@ -340,6 +341,7 @@ const sanitizeTaskItem = (value: unknown): TaskItem | null => {
     id: unknown
     projectId: unknown
     title: unknown
+    description: unknown
     status: unknown
     linkedTarget: unknown
     createdAt: unknown
@@ -372,6 +374,7 @@ const sanitizeTaskItem = (value: unknown): TaskItem | null => {
     id: payload.id.trim(),
     projectId: payload.projectId.trim(),
     title: payload.title.trim(),
+    description: typeof payload.description === 'string' ? payload.description.trim() : '',
     status: payload.status,
     linkedTarget,
     createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : now,
@@ -2606,6 +2609,7 @@ function App() {
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const [taskDrawerTarget, setTaskDrawerTarget] = useState<EditingTarget | null>(null)
   const [taskDraftTitle, setTaskDraftTitle] = useState('')
+  const [taskDraftDescription, setTaskDraftDescription] = useState('')
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const effectiveS3SourceUrl = configuredS3SourceUrl.trim() || null
@@ -2702,6 +2706,7 @@ function App() {
     setDraftSubtitle('')
     setTaskDrawerTarget(null)
     setTaskDraftTitle('')
+    setTaskDraftDescription('')
     setActiveLayer('root')
     setDrillPath(null)
   }
@@ -3262,11 +3267,13 @@ function App() {
 
     setTaskDrawerTarget(target)
     setTaskDraftTitle('')
+    setTaskDraftDescription('')
   }
 
   const handleCloseTaskDrawer = () => {
     setTaskDrawerTarget(null)
     setTaskDraftTitle('')
+    setTaskDraftDescription('')
   }
 
   const handleCreateTaskForDrawer = () => {
@@ -3284,6 +3291,7 @@ function App() {
       id: createTaskId(),
       projectId: selectedProjectId,
       title: trimmedTitle,
+      description: taskDraftDescription.trim(),
       status: 'todo',
       linkedTarget: taskDrawerTarget,
       createdAt: now,
@@ -3292,6 +3300,7 @@ function App() {
 
     setTasks((prev) => [nextTask, ...prev])
     setTaskDraftTitle('')
+    setTaskDraftDescription('')
   }
 
   const handleTaskStatusChange = (taskId: string, status: TaskStatus) => {
@@ -5056,6 +5065,7 @@ function App() {
                           <li key={task.id} className="task-item">
                             <div>
                               <p className="task-item-title">{task.title}</p>
+                              {task.description && <p className="task-item-description">{task.description}</p>}
                               <p className="mandala-path task-item-meta">关联目标：{getTargetDisplayLabel(task.linkedTarget)}</p>
                             </div>
                             <div className="task-item-actions">
@@ -5110,6 +5120,14 @@ function App() {
                       placeholder="输入任务标题"
                       aria-label="任务标题"
                     />
+                    <textarea
+                      className="project-input project-textarea"
+                      value={taskDraftDescription}
+                      onChange={(event) => setTaskDraftDescription(event.target.value)}
+                      placeholder="输入任务描述（可选）"
+                      aria-label="任务描述"
+                      rows={3}
+                    />
                     <button type="button" className="mandala-action" onClick={handleCreateTaskForDrawer} disabled={!taskDraftTitle.trim()}>
                       新增任务
                     </button>
@@ -5123,6 +5141,7 @@ function App() {
                         <li key={task.id} className="task-item">
                           <div>
                             <p className="task-item-title">{task.title}</p>
+                            {task.description && <p className="task-item-description">{task.description}</p>}
                             <p className="mandala-path task-item-meta">更新于 {new Date(task.updatedAt).toLocaleString()}</p>
                           </div>
                           <div className="task-item-actions">
