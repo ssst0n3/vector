@@ -742,9 +742,8 @@
   word-break: break-word;
   overflow-wrap: anywhere;
   text-align: center;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
+  display: block;
+  white-space: normal;
   overflow: hidden;
 }
 
