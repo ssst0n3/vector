@@ -1079,6 +1079,254 @@ type InitialProjectData = {
   tasks: TaskItem[]
 }
 
+type SyncDiffSection = {
+  items: string[]
+  totalCount: number
+  hiddenCount: number
+}
+
+type SyncDiffSummary = {
+  projects: SyncDiffSection
+  tasks: SyncDiffSection
+  boards: SyncDiffSection
+  totalCount: number
+}
+
+const MAX_SYNC_DIFF_ITEMS_PER_SECTION = 6
+
+const cloneInitialProjectData = (data: InitialProjectData): InitialProjectData => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(data)
+  }
+
+  return JSON.parse(JSON.stringify(data)) as InitialProjectData
+}
+
+const createSyncDiffSection = (items: string[]): SyncDiffSection => {
+  const slicedItems = items.slice(0, MAX_SYNC_DIFF_ITEMS_PER_SECTION)
+  return {
+    items: slicedItems,
+    totalCount: items.length,
+    hiddenCount: Math.max(0, items.length - slicedItems.length),
+  }
+}
+
+const formatProjectLabel = (project: ProjectItem | undefined, projectId: ProjectId): string => {
+  if (project?.name.trim()) {
+    return `${project.name.trim()} (${projectId})`
+  }
+
+  return projectId
+}
+
+const buildProjectDiffMessages = (previous: InitialProjectData, current: InitialProjectData): string[] => {
+  const previousById = new Map(previous.projects.map((project) => [project.id, project]))
+  const currentById = new Map(current.projects.map((project) => [project.id, project]))
+  const projectIds = Array.from(new Set([...previousById.keys(), ...currentById.keys()])).sort((left, right) => left.localeCompare(right))
+  const messages: string[] = []
+
+  for (const projectId of projectIds) {
+    const previousProject = previousById.get(projectId)
+    const currentProject = currentById.get(projectId)
+
+    if (!previousProject && currentProject) {
+      messages.push(`项目已新增：${formatProjectLabel(currentProject, projectId)}`)
+      continue
+    }
+
+    if (previousProject && !currentProject) {
+      messages.push(`项目已删除：${formatProjectLabel(previousProject, projectId)}`)
+      continue
+    }
+
+    if (!previousProject || !currentProject) {
+      continue
+    }
+
+    const changedFields: string[] = []
+    if (previousProject.name !== currentProject.name) {
+      changedFields.push('name')
+    }
+    if (previousProject.summary !== currentProject.summary) {
+      changedFields.push('summary')
+    }
+    if (previousProject.status !== currentProject.status) {
+      changedFields.push('status')
+    }
+
+    if (changedFields.length > 0) {
+      messages.push(`项目已修改：${formatProjectLabel(currentProject, projectId)}（字段：${changedFields.join('、')}）`)
+    }
+  }
+
+  if (previous.selectedProjectId !== current.selectedProjectId) {
+    const fromProject = previous.selectedProjectId ? previousById.get(previous.selectedProjectId) : undefined
+    const toProject = current.selectedProjectId ? currentById.get(current.selectedProjectId) : undefined
+    messages.push(
+      `当前选中项目变更：${
+        previous.selectedProjectId ? formatProjectLabel(fromProject, previous.selectedProjectId) : '无'
+      } -> ${current.selectedProjectId ? formatProjectLabel(toProject, current.selectedProjectId) : '无'}`,
+    )
+  }
+
+  return messages
+}
+
+const buildTaskDiffMessages = (previous: InitialProjectData, current: InitialProjectData): string[] => {
+  const previousById = new Map(previous.tasks.map((task) => [task.id, task]))
+  const currentById = new Map(current.tasks.map((task) => [task.id, task]))
+  const projectById = new Map(current.projects.map((project) => [project.id, project]))
+  const taskIds = Array.from(new Set([...previousById.keys(), ...currentById.keys()])).sort((left, right) => left.localeCompare(right))
+  const messages: string[] = []
+
+  for (const taskId of taskIds) {
+    const previousTask = previousById.get(taskId)
+    const currentTask = currentById.get(taskId)
+
+    if (!previousTask && currentTask) {
+      const projectLabel = formatProjectLabel(projectById.get(currentTask.projectId), currentTask.projectId)
+      messages.push(`任务已新增：${currentTask.title || taskId}（项目：${projectLabel}）`)
+      continue
+    }
+
+    if (previousTask && !currentTask) {
+      messages.push(`任务已删除：${previousTask.title || taskId}`)
+      continue
+    }
+
+    if (!previousTask || !currentTask) {
+      continue
+    }
+
+    const changedFields: string[] = []
+    if (previousTask.projectId !== currentTask.projectId) {
+      changedFields.push('projectId')
+    }
+    if (previousTask.title !== currentTask.title) {
+      changedFields.push('title')
+    }
+    if (previousTask.description !== currentTask.description) {
+      changedFields.push('description')
+    }
+    if (previousTask.status !== currentTask.status) {
+      changedFields.push('status')
+    }
+    if (stableStringify(previousTask.linkedTarget) !== stableStringify(currentTask.linkedTarget)) {
+      changedFields.push('linkedTarget')
+    }
+
+    if (changedFields.length > 0) {
+      const projectLabel = formatProjectLabel(projectById.get(currentTask.projectId), currentTask.projectId)
+      messages.push(`任务已修改：${currentTask.title || taskId}（项目：${projectLabel}，字段：${changedFields.join('、')}）`)
+    }
+  }
+
+  return messages
+}
+
+const pushCellDiffMessages = (messages: string[], label: string, previousCell: CellContent, currentCell: CellContent) => {
+  const changedFields: string[] = []
+  if (previousCell.title !== currentCell.title) {
+    changedFields.push('title')
+  }
+  if (previousCell.subtitle !== currentCell.subtitle) {
+    changedFields.push('subtitle')
+  }
+
+  if (changedFields.length > 0) {
+    messages.push(`${label} 内容已修改（字段：${changedFields.join('、')}）`)
+  }
+}
+
+const compareDrillNodeDiffMessages = (messages: string[], pathMarker: string, previousNode: DrillNode, currentNode: DrillNode) => {
+  pushCellDiffMessages(messages, `${pathMarker} 中心`, previousNode.core, currentNode.core)
+  if (previousNode.visibleCore !== currentNode.visibleCore) {
+    messages.push(`${pathMarker} 中心显示状态已变更`)
+  }
+
+  for (const action of ACTION_LAYOUT) {
+    const label = `${pathMarker}-${action.marker}`
+    pushCellDiffMessages(messages, label, previousNode.actions[action.id], currentNode.actions[action.id])
+    if (previousNode.visibleActions[action.id] !== currentNode.visibleActions[action.id]) {
+      messages.push(`${label} 显示状态已变更`)
+    }
+  }
+
+  for (const action of ACTION_LAYOUT) {
+    const previousChild = previousNode.children[action.id]
+    const currentChild = currentNode.children[action.id]
+    if (!previousChild && !currentChild) {
+      continue
+    }
+
+    const fallbackPrevious = previousChild ?? createDrillNode(previousNode.actions[action.id], previousNode.actions[action.id].title)
+    const fallbackCurrent = currentChild ?? createDrillNode(currentNode.actions[action.id], currentNode.actions[action.id].title)
+    compareDrillNodeDiffMessages(messages, `${pathMarker}-${action.marker}`, fallbackPrevious, fallbackCurrent)
+  }
+}
+
+const buildBoardDiffMessages = (previous: InitialProjectData, current: InitialProjectData): string[] => {
+  const previousProjectById = new Map(previous.projects.map((project) => [project.id, project]))
+  const currentProjectById = new Map(current.projects.map((project) => [project.id, project]))
+  const boardProjectIds = Array.from(new Set([...Object.keys(previous.boards), ...Object.keys(current.boards)])).sort((left, right) =>
+    left.localeCompare(right),
+  )
+  const messages: string[] = []
+
+  for (const projectId of boardProjectIds) {
+    const previousBoard = previous.boards[projectId]
+    const currentBoard = current.boards[projectId]
+    const projectLabel = formatProjectLabel(currentProjectById.get(projectId) ?? previousProjectById.get(projectId), projectId)
+
+    if (!previousBoard && currentBoard) {
+      messages.push(`OW64 面板已新增：${projectLabel}`)
+      continue
+    }
+
+    if (previousBoard && !currentBoard) {
+      messages.push(`OW64 面板已删除：${projectLabel}`)
+      continue
+    }
+
+    if (!previousBoard || !currentBoard) {
+      continue
+    }
+
+    const boardMessages: string[] = []
+    pushCellDiffMessages(boardMessages, 'O 中心', previousBoard.core, currentBoard.core)
+    if (previousBoard.visibleCore !== currentBoard.visibleCore) {
+      boardMessages.push('O 中心显示状态已变更')
+    }
+
+    for (const pillar of PILLAR_CELLS) {
+      pushCellDiffMessages(boardMessages, pillar.marker, previousBoard.pillars[pillar.id], currentBoard.pillars[pillar.id])
+      if (previousBoard.visiblePillars[pillar.id] !== currentBoard.visiblePillars[pillar.id]) {
+        boardMessages.push(`${pillar.marker} 显示状态已变更`)
+      }
+      compareDrillNodeDiffMessages(boardMessages, pillar.marker, previousBoard.drills[pillar.id], currentBoard.drills[pillar.id])
+    }
+
+    for (const boardMessage of boardMessages) {
+      messages.push(`${projectLabel} / ${boardMessage}`)
+    }
+  }
+
+  return messages
+}
+
+const buildSyncDiffSummary = (previous: InitialProjectData, current: InitialProjectData): SyncDiffSummary => {
+  const projectMessages = buildProjectDiffMessages(previous, current)
+  const taskMessages = buildTaskDiffMessages(previous, current)
+  const boardMessages = buildBoardDiffMessages(previous, current)
+
+  return {
+    projects: createSyncDiffSection(projectMessages),
+    tasks: createSyncDiffSection(taskMessages),
+    boards: createSyncDiffSection(boardMessages),
+    totalCount: projectMessages.length + taskMessages.length + boardMessages.length,
+  }
+}
+
 const stableStringify = (value: unknown): string => {
   if (value === null || typeof value !== 'object') {
     return JSON.stringify(value)
@@ -2717,6 +2965,10 @@ function App() {
     s3: null,
     gist: null,
   })
+  const [lastSyncedDataBySource, setLastSyncedDataBySource] = useState<Record<RemoteSourceType, InitialProjectData | null>>({
+    s3: null,
+    gist: null,
+  })
   const [isDragEnabled, setIsDragEnabled] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsedPreference())
   const [dragSourceTarget, setDragSourceTarget] = useState<DraggableCardTarget | null>(null)
@@ -2811,6 +3063,29 @@ function App() {
 
     return lastSyncedFingerprint !== currentDataFingerprint
   }, [currentDataFingerprint, effectiveSourceType, isSavingToActiveSource, lastSyncedFingerprintBySource])
+  const activeSourceDiffSummary = useMemo(() => {
+    if (effectiveSourceType === 'local') {
+      return null
+    }
+
+    const syncedData = lastSyncedDataBySource[effectiveSourceType]
+    if (!syncedData) {
+      return null
+    }
+
+    const summary = buildSyncDiffSummary(syncedData, {
+      projects,
+      boards: boardByProject,
+      selectedProjectId,
+      tasks,
+    })
+
+    if (summary.totalCount === 0) {
+      return null
+    }
+
+    return summary
+  }, [boardByProject, effectiveSourceType, lastSyncedDataBySource, projects, selectedProjectId, tasks])
 
   const applyInitialProjectData = (data: InitialProjectData) => {
     setProjects(data.projects)
@@ -2875,6 +3150,11 @@ function App() {
             ...prev,
             [effectiveSourceType]: syncedFingerprint,
           }))
+          const syncedSnapshot = cloneInitialProjectData(sourceData.data)
+          setLastSyncedDataBySource((prev) => ({
+            ...prev,
+            [effectiveSourceType]: syncedSnapshot,
+          }))
         }
         if (effectiveSourceType === 'gist') {
           setGistSourceFeedback('加载成功：已从 Gist 数据源加载。')
@@ -2886,6 +3166,10 @@ function App() {
 
       if (effectiveSourceType === 's3' || effectiveSourceType === 'gist') {
         setLastSyncedFingerprintBySource((prev) => ({
+          ...prev,
+          [effectiveSourceType]: null,
+        }))
+        setLastSyncedDataBySource((prev) => ({
           ...prev,
           [effectiveSourceType]: null,
         }))
@@ -3162,6 +3446,11 @@ function App() {
         ...prev,
         s3: syncedFingerprint,
       }))
+      const syncedSnapshot = cloneInitialProjectData(dataToSave)
+      setLastSyncedDataBySource((prev) => ({
+        ...prev,
+        s3: syncedSnapshot,
+      }))
     } else if (saved.status === 'auth-required') {
       setS3SourceFeedback('保存到 S3 失败：需要认证凭据。')
     } else if (saved.status === 'forbidden') {
@@ -3197,6 +3486,11 @@ function App() {
       setLastSyncedFingerprintBySource((prev) => ({
         ...prev,
         gist: syncedFingerprint,
+      }))
+      const syncedSnapshot = cloneInitialProjectData(dataToSave)
+      setLastSyncedDataBySource((prev) => ({
+        ...prev,
+        gist: syncedSnapshot,
       }))
     } else if (saved.status === 'auth-required') {
       setGistSourceFeedback('保存失败：需要有效的 GitHub Token。')
@@ -4077,6 +4371,50 @@ function App() {
               </button>
             </div>
             <p className={`mandala-path sidebar-mandala-path sidebar-sync-status is-${activeSourceSyncStatus.tone}`}>{activeSourceSyncStatus.text}</p>
+            {activeSourceDiffSummary && (
+              <div className="sync-diff-block" aria-live="polite">
+                <p className="mandala-path sidebar-mandala-path sync-diff-title">待保存明细：{activeSourceDiffSummary.totalCount} 项</p>
+                {activeSourceDiffSummary.projects.totalCount > 0 && (
+                  <div className="sync-diff-section">
+                    <p className="mandala-path sidebar-mandala-path sync-diff-section-title">项目（{activeSourceDiffSummary.projects.totalCount}）</p>
+                    {activeSourceDiffSummary.projects.items.map((item, index) => (
+                      <p key={`sync-project-${index}`} className="mandala-path sidebar-mandala-path sync-diff-item">
+                        - {item}
+                      </p>
+                    ))}
+                    {activeSourceDiffSummary.projects.hiddenCount > 0 && (
+                      <p className="mandala-path sidebar-mandala-path sync-diff-more">还有 {activeSourceDiffSummary.projects.hiddenCount} 项未展开</p>
+                    )}
+                  </div>
+                )}
+                {activeSourceDiffSummary.tasks.totalCount > 0 && (
+                  <div className="sync-diff-section">
+                    <p className="mandala-path sidebar-mandala-path sync-diff-section-title">任务（{activeSourceDiffSummary.tasks.totalCount}）</p>
+                    {activeSourceDiffSummary.tasks.items.map((item, index) => (
+                      <p key={`sync-task-${index}`} className="mandala-path sidebar-mandala-path sync-diff-item">
+                        - {item}
+                      </p>
+                    ))}
+                    {activeSourceDiffSummary.tasks.hiddenCount > 0 && (
+                      <p className="mandala-path sidebar-mandala-path sync-diff-more">还有 {activeSourceDiffSummary.tasks.hiddenCount} 项未展开</p>
+                    )}
+                  </div>
+                )}
+                {activeSourceDiffSummary.boards.totalCount > 0 && (
+                  <div className="sync-diff-section">
+                    <p className="mandala-path sidebar-mandala-path sync-diff-section-title">OW64 面板（{activeSourceDiffSummary.boards.totalCount}）</p>
+                    {activeSourceDiffSummary.boards.items.map((item, index) => (
+                      <p key={`sync-board-${index}`} className="mandala-path sidebar-mandala-path sync-diff-item">
+                        - {item}
+                      </p>
+                    ))}
+                    {activeSourceDiffSummary.boards.hiddenCount > 0 && (
+                      <p className="mandala-path sidebar-mandala-path sync-diff-more">还有 {activeSourceDiffSummary.boards.hiddenCount} 项未展开</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {activeSourceFeedback && <p className="mandala-path sidebar-mandala-path">{activeSourceFeedback}</p>}
           </section>
 
