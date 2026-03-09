@@ -1045,6 +1045,11 @@
   color: #2f6f44;
 }
 
+.task-badge.is-inherited {
+  border-style: dashed;
+  background: color-mix(in srgb, #eef6f1 92%, transparent);
+}
+
 .mandala-hint {
   margin: 0;
   font-size: 0.76rem;

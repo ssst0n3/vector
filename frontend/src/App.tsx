@@ -165,9 +165,21 @@ type TaskItem = {
   title: string
   description: string
   status: TaskStatus
-  linkedTarget: EditingTarget
+  linkedTarget: TaskLinkedTarget
   createdAt: string
   updatedAt: string
+}
+
+type TaskStats = {
+  total: number
+  directTodo: number
+  directDoing: number
+  directDone: number
+  directOpen: number
+  inheritedTotal: number
+  inheritedTodo: number
+  inheritedDoing: number
+  inheritedDone: number
 }
 
 const ROW_TYPE_LABEL: Record<CsvRow['rowType'], string> = {
@@ -182,6 +194,8 @@ type EditingTarget =
   | { scope: 'pillar'; pillarId: PillarId }
   | { scope: 'drillCore'; path: DrillPath }
   | { scope: 'drillAction'; path: DrillPath; actionId: ActionId }
+
+type TaskLinkedTarget = EditingTarget | { scope: 'unassigned' }
 
 type DraggableCardTarget =
   | { scope: 'pillar'; pillarId: PillarId }
@@ -242,6 +256,18 @@ const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   todo: '待办',
   doing: '进行中',
   done: '已完成',
+}
+
+const EMPTY_TASK_STATS: TaskStats = {
+  total: 0,
+  directTodo: 0,
+  directDoing: 0,
+  directDone: 0,
+  directOpen: 0,
+  inheritedTotal: 0,
+  inheritedTodo: 0,
+  inheritedDoing: 0,
+  inheritedDone: 0,
 }
 
 const isSamePath = (left: DrillPath, right: DrillPath) => {
@@ -332,6 +358,14 @@ const isTaskStatus = (value: unknown): value is TaskStatus => {
   return typeof value === 'string' && TASK_STATUS_OPTIONS.includes(value as TaskStatus)
 }
 
+const sanitizeTaskLinkedTarget = (value: unknown): TaskLinkedTarget | null => {
+  if (value && typeof value === 'object' && (value as Partial<{ scope: unknown }>).scope === 'unassigned') {
+    return { scope: 'unassigned' }
+  }
+
+  return sanitizeEditingTarget(value)
+}
+
 const sanitizeTaskItem = (value: unknown): TaskItem | null => {
   if (!value || typeof value !== 'object') {
     return null
@@ -364,7 +398,7 @@ const sanitizeTaskItem = (value: unknown): TaskItem | null => {
     return null
   }
 
-  const linkedTarget = sanitizeEditingTarget(payload.linkedTarget)
+  const linkedTarget = sanitizeTaskLinkedTarget(payload.linkedTarget)
   if (!linkedTarget) {
     return null
   }
@@ -386,7 +420,11 @@ const createTaskId = (): string => {
   return `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-const toTargetKey = (target: EditingTarget): string => {
+const toTargetKey = (target: TaskLinkedTarget): string => {
+  if (target.scope === 'unassigned') {
+    return 'unassigned'
+  }
+
   if (target.scope === 'core') {
     return 'core'
   }
@@ -408,7 +446,11 @@ const toTargetKey = (target: EditingTarget): string => {
   return `drillAction:${target.path.join('>')}:${target.actionId}`
 }
 
-const getTargetLabel = (target: EditingTarget): string => {
+const getTargetLabel = (target: TaskLinkedTarget): string => {
+  if (target.scope === 'unassigned') {
+    return '未绑定目标'
+  }
+
   if (target.scope === 'core') {
     return 'O 中心目标'
   }
@@ -424,7 +466,11 @@ const getTargetLabel = (target: EditingTarget): string => {
   return `${getMarkerByPath(target.path)}-${ACTION_META[target.actionId].marker}`
 }
 
-const getTargetTitleFromBoard = (board: Ow64Board, target: EditingTarget): string => {
+const getTargetTitleFromBoard = (board: Ow64Board, target: TaskLinkedTarget): string => {
+  if (target.scope === 'unassigned') {
+    return ''
+  }
+
   if (target.scope === 'core') {
     return board.core.title.trim()
   }
@@ -446,6 +492,108 @@ const getTargetTitleFromBoard = (board: Ow64Board, target: EditingTarget): strin
 
   const currentNode = getNodeByPath(board, target.path)
   return currentNode.actions[target.actionId].title.trim()
+}
+
+const getParentTarget = (target: EditingTarget): EditingTarget | null => {
+  if (target.scope === 'core') {
+    return null
+  }
+
+  if (target.scope === 'pillar') {
+    return { scope: 'core' }
+  }
+
+  if (target.scope === 'drillCore') {
+    if (target.path.length === 1) {
+      return { scope: 'core' }
+    }
+
+    const parentPath = target.path.slice(0, -1) as DrillPath
+    const parentActionId = target.path[target.path.length - 1] as ActionId
+    return { scope: 'drillAction', path: parentPath, actionId: parentActionId }
+  }
+
+  return { scope: 'drillCore', path: target.path }
+}
+
+const getTargetLineageKeys = (target: EditingTarget): string[] => {
+  const keys: string[] = []
+  const seenKeys = new Set<string>()
+  let currentTarget: EditingTarget | null = target
+
+  while (currentTarget) {
+    const key = toTargetKey(currentTarget)
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key)
+      keys.push(key)
+    }
+
+    currentTarget = getParentTarget(currentTarget)
+  }
+
+  return keys
+}
+
+const getTaskBadgeLabel = (taskStats: TaskStats, options?: { showDirectFullStatus?: boolean; showInherited?: boolean }): string => {
+  const segments: string[] = []
+
+  if (options?.showDirectFullStatus) {
+    const directSegments: string[] = []
+
+    if (taskStats.directTodo > 0) {
+      directSegments.push(`待办 ${taskStats.directTodo}`)
+    }
+
+    if (taskStats.directDoing > 0) {
+      directSegments.push(`进行中 ${taskStats.directDoing}`)
+    }
+
+    if (taskStats.directDone > 0) {
+      directSegments.push(`完成 ${taskStats.directDone}`)
+    }
+
+    if (directSegments.length > 0) {
+      segments.push(directSegments.join(' · '))
+    }
+  } else if (taskStats.directOpen > 0) {
+    segments.push(`待办 ${taskStats.directOpen}`)
+  }
+
+  if (options?.showInherited !== false && taskStats.inheritedTotal > 0) {
+    const inheritedSegments: string[] = []
+
+    if (taskStats.inheritedTodo > 0) {
+      inheritedSegments.push(`待办 ${taskStats.inheritedTodo}`)
+    }
+
+    if (taskStats.inheritedDoing > 0) {
+      inheritedSegments.push(`进行中 ${taskStats.inheritedDoing}`)
+    }
+
+    if (taskStats.inheritedDone > 0) {
+      inheritedSegments.push(`完成 ${taskStats.inheritedDone}`)
+    }
+
+    if (inheritedSegments.length > 0) {
+      segments.push(`下层 ${inheritedSegments.join(' · ')}`)
+    }
+  }
+
+  return segments.join(' | ')
+}
+
+const getTaskBadgeTone = (taskStats: TaskStats): 'is-pending' | 'is-done' => {
+  return taskStats.directOpen > 0 || taskStats.inheritedTodo > 0 || taskStats.inheritedDoing > 0 ? 'is-pending' : 'is-done'
+}
+
+const shouldShowTaskBadge = (taskStats: TaskStats, options?: { showDirectFullStatus?: boolean; showInherited?: boolean }): boolean => {
+  const hasDirectStats = options?.showDirectFullStatus
+    ? taskStats.directTodo > 0 || taskStats.directDoing > 0 || taskStats.directDone > 0
+    : taskStats.directOpen > 0
+
+  const hasInheritedStats = options?.showInherited !== false && taskStats.inheritedTotal > 0
+
+  return hasDirectStats || hasInheritedStats
 }
 
 const getMarkerByPath = (path: DrillPath): string => {
@@ -2083,6 +2231,14 @@ const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
   return false
 }
 
+const isSameTaskLinkedTarget = (left: TaskLinkedTarget, right: TaskLinkedTarget) => {
+  if (left.scope === 'unassigned' || right.scope === 'unassigned') {
+    return left.scope === right.scope
+  }
+
+  return isSameTarget(left, right)
+}
+
 const isSameDraggableTarget = (left: DraggableCardTarget | null, right: DraggableCardTarget) => {
   if (!left || left.scope !== right.scope) {
     return false
@@ -2542,15 +2698,21 @@ const toMarkerPath = (path: DrillPath): string => {
 const buildOw64CsvRows = (board: Ow64Board): CsvRow[] => {
   const rows: CsvRow[] = []
 
-  rows.push({
-    rowType: 'root-core',
-    marker: 'O',
-    path: 'O',
-    title: board.core.title,
-    subtitle: board.core.subtitle,
-  })
+  if (board.visibleCore) {
+    rows.push({
+      rowType: 'root-core',
+      marker: 'O',
+      path: 'O',
+      title: board.core.title,
+      subtitle: board.core.subtitle,
+    })
+  }
 
   for (const pillar of PILLAR_CELLS) {
+    if (!board.visiblePillars[pillar.id]) {
+      continue
+    }
+
     rows.push({
       rowType: 'root-pillar',
       marker: pillar.marker,
@@ -2562,15 +2724,21 @@ const buildOw64CsvRows = (board: Ow64Board): CsvRow[] => {
 
   const collectDrillRows = (node: DrillNode, path: DrillPath) => {
     const markerPath = getMarkerByPath(path)
-    rows.push({
-      rowType: 'drill-core',
-      marker: markerPath,
-      path: toMarkerPath(path),
-      title: node.core.title,
-      subtitle: node.core.subtitle,
-    })
+    if (node.visibleCore) {
+      rows.push({
+        rowType: 'drill-core',
+        marker: markerPath,
+        path: toMarkerPath(path),
+        title: node.core.title,
+        subtitle: node.core.subtitle,
+      })
+    }
 
     for (const action of ACTION_LAYOUT) {
+      if (!node.visibleActions[action.id]) {
+        continue
+      }
+
       const actionContent = node.actions[action.id]
       rows.push({
         rowType: 'drill-action',
@@ -2588,6 +2756,10 @@ const buildOw64CsvRows = (board: Ow64Board): CsvRow[] => {
   }
 
   for (const pillar of PILLAR_CELLS) {
+    if (!board.visiblePillars[pillar.id]) {
+      continue
+    }
+
     collectDrillRows(board.drills[pillar.id], [pillar.id] as DrillPath)
   }
 
@@ -3307,15 +3479,42 @@ function App() {
     return tasks.filter((task) => task.projectId === selectedProjectId)
   }, [selectedProjectId, tasks])
   const taskStatsByTargetKey = useMemo(() => {
-    const stats = new Map<string, { total: number; pending: number }>()
+    const stats = new Map<string, TaskStats>()
+
     for (const task of selectedProjectTasks) {
-      const key = toTargetKey(task.linkedTarget)
-      const current = stats.get(key) ?? { total: 0, pending: 0 }
-      current.total += 1
-      if (task.status !== 'done') {
-        current.pending += 1
+      if (task.linkedTarget.scope === 'unassigned') {
+        continue
       }
-      stats.set(key, current)
+
+      const targetLineageKeys = getTargetLineageKeys(task.linkedTarget)
+
+      targetLineageKeys.forEach((key, index) => {
+        const current = stats.get(key) ?? { ...EMPTY_TASK_STATS }
+        current.total += 1
+
+        if (index === 0) {
+          if (task.status === 'todo') {
+            current.directTodo += 1
+            current.directOpen += 1
+          } else if (task.status === 'doing') {
+            current.directDoing += 1
+            current.directOpen += 1
+          } else {
+            current.directDone += 1
+          }
+        } else {
+          current.inheritedTotal += 1
+          if (task.status === 'todo') {
+            current.inheritedTodo += 1
+          } else if (task.status === 'doing') {
+            current.inheritedDoing += 1
+          } else {
+            current.inheritedDone += 1
+          }
+        }
+
+        stats.set(key, current)
+      })
     }
 
     return stats
@@ -3335,10 +3534,10 @@ function App() {
 
     return selectedProjectTasks.find((task) => task.id === retargetTaskId) ?? null
   }, [retargetTaskId, selectedProjectTasks])
-  const getTaskStatsForTarget = (target: EditingTarget): { total: number; pending: number } => {
-    return taskStatsByTargetKey.get(toTargetKey(target)) ?? { total: 0, pending: 0 }
+  const getTaskStatsForTarget = (target: EditingTarget): TaskStats => {
+    return taskStatsByTargetKey.get(toTargetKey(target)) ?? EMPTY_TASK_STATS
   }
-  const getTargetDisplayLabel = (target: EditingTarget): string => {
+  const getTargetDisplayLabel = (target: TaskLinkedTarget): string => {
     const title = getTargetTitleFromBoard(currentBoard, target)
     if (title) {
       return title
@@ -3791,7 +3990,7 @@ function App() {
           return task
         }
 
-        if (isSameTarget(task.linkedTarget, target)) {
+        if (isSameTaskLinkedTarget(task.linkedTarget, target)) {
           return task
         }
 
@@ -4156,7 +4355,7 @@ function App() {
     })
 
     if (didSwap) {
-      const remapTaskTarget = (taskTarget: EditingTarget): EditingTarget => {
+      const remapEditingTarget = (taskTarget: EditingTarget): EditingTarget => {
         if (source.scope === 'pillar' && target.scope === 'pillar') {
           return remapTaskTargetForRootSwap(taskTarget, source.pillarId, target.pillarId)
         }
@@ -4168,6 +4367,14 @@ function App() {
         return taskTarget
       }
 
+      const remapTaskTarget = (taskTarget: TaskLinkedTarget): TaskLinkedTarget => {
+        if (taskTarget.scope === 'unassigned') {
+          return taskTarget
+        }
+
+        return remapEditingTarget(taskTarget)
+      }
+
       setTasks((prev) =>
         prev.map((task) => {
           if (task.projectId !== selectedProjectId) {
@@ -4175,7 +4382,7 @@ function App() {
           }
 
           const nextTarget = remapTaskTarget(task.linkedTarget)
-          if (isSameTarget(task.linkedTarget, nextTarget)) {
+          if (isSameTaskLinkedTarget(task.linkedTarget, nextTarget)) {
             return task
           }
 
@@ -4191,7 +4398,7 @@ function App() {
           return prev
         }
 
-        return remapTaskTarget(prev)
+        return remapEditingTarget(prev)
       })
 
       setIsDragEnabled(false)
@@ -5181,9 +5388,11 @@ function App() {
                                 onDrop={(event) => handleCardDrop(event, rootDragTarget as DraggableCardTarget)}
                                 onDragEnd={handleCardDragEnd}
                               >
-                                {taskStats.total > 0 && (
-                                  <span className={`task-badge ${taskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
-                                    任务 {taskStats.total}
+                                {shouldShowTaskBadge(taskStats) && (
+                                  <span
+                                    className={`task-badge ${getTaskBadgeTone(taskStats)} ${taskStats.directOpen === 0 ? 'is-inherited' : ''}`}
+                                  >
+                                    {getTaskBadgeLabel(taskStats)}
                                   </span>
                                 )}
                                 <h2 className="mandala-title">{content.title}</h2>
@@ -5260,9 +5469,11 @@ function App() {
 
                             return (
                               <article key={cell.id} className="mandala-cell is-core" aria-label={`${cell.marker} ${content.title}`}>
-                                {taskStats.total > 0 && (
-                                  <span className={`task-badge ${taskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
-                                    任务 {taskStats.total}
+                                {shouldShowTaskBadge(taskStats, { showInherited: false }) && (
+                                  <span
+                                    className={`task-badge ${getTaskBadgeTone(taskStats)} ${taskStats.directOpen === 0 ? 'is-inherited' : ''}`}
+                                  >
+                                    {getTaskBadgeLabel(taskStats, { showInherited: false })}
                                   </span>
                                 )}
                                 <h2 className="mandala-title">{content.title}</h2>
@@ -5400,9 +5611,11 @@ function App() {
 
                             return (
                               <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${centerContent.title}`}>
-                                {centerTaskStats.total > 0 && (
-                                  <span className={`task-badge ${centerTaskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
-                                    任务 {centerTaskStats.total}
+                                {shouldShowTaskBadge(centerTaskStats, { showInherited: false }) && (
+                                  <span
+                                    className={`task-badge ${getTaskBadgeTone(centerTaskStats)} ${centerTaskStats.directOpen === 0 ? 'is-inherited' : ''}`}
+                                  >
+                                    {getTaskBadgeLabel(centerTaskStats, { showInherited: false })}
                                   </span>
                                 )}
                                 <h2 className="mandala-title">{centerContent.title}</h2>
@@ -5583,6 +5796,7 @@ function App() {
                           const actionDragKey = getDraggableCardKey(actionDragTarget)
                           const isActionDragOver = dragOverKey === actionDragKey
                           const isActionDragSource = isSameDraggableTarget(dragSourceTarget, actionDragTarget)
+                          const isLeafAction = !activeDrillNodeExact?.children[gridItem.actionId]
 
                           return (
                             <article
@@ -5595,9 +5809,11 @@ function App() {
                               onDrop={(event) => handleCardDrop(event, actionDragTarget)}
                               onDragEnd={handleCardDragEnd}
                             >
-                              {actionTaskStats.total > 0 && (
-                                <span className={`task-badge ${actionTaskStats.pending > 0 ? 'is-pending' : 'is-done'}`}>
-                                  任务 {actionTaskStats.total}
+                              {shouldShowTaskBadge(actionTaskStats, { showDirectFullStatus: isLeafAction }) && (
+                                <span
+                                  className={`task-badge ${getTaskBadgeTone(actionTaskStats)} ${actionTaskStats.directOpen === 0 ? 'is-inherited' : ''}`}
+                                >
+                                  {getTaskBadgeLabel(actionTaskStats, { showDirectFullStatus: isLeafAction })}
                                 </span>
                               )}
                               <h2 className="mandala-title">{actionContent.title}</h2>
@@ -5763,13 +5979,19 @@ function App() {
                                   >
                                     更改目标
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="mandala-action is-muted"
-                                    onClick={() => handleNavigateToTaskTarget(task.linkedTarget)}
-                                  >
-                                    定位目标
-                                  </button>
+                                  {task.linkedTarget.scope !== 'unassigned' && (
+                                    <button
+                                      type="button"
+                                      className="mandala-action is-muted"
+                                      onClick={() => {
+                                        if (task.linkedTarget.scope !== 'unassigned') {
+                                          handleNavigateToTaskTarget(task.linkedTarget)
+                                        }
+                                      }}
+                                    >
+                                      定位目标
+                                    </button>
+                                  )}
                                   <button type="button" className="mandala-action is-muted" onClick={() => handleTaskDelete(task.id)}>
                                     删除
                                   </button>
