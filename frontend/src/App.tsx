@@ -5561,6 +5561,11 @@ function App() {
                             const editing = isSameTarget(editingTarget, centerTarget)
                             const centerContent = getContentByTarget(currentBoard, centerTarget)
                             const centerTaskStats = getTaskStatsForTarget(centerTarget)
+                            const isLeafCenter = ACTION_LAYOUT.every((action) => !activeDrillNodeExact?.children[action.id])
+                            const centerTaskBadgeOptions = {
+                              showDirectFullStatus: isLeafCenter,
+                              showInherited: false,
+                            }
 
                             const inputIdSuffix =
                               activeDrillPath.length === 1
@@ -5611,11 +5616,11 @@ function App() {
 
                             return (
                               <article key={inputIdSuffix} className="mandala-cell is-core" aria-label={`${marker} ${centerContent.title}`}>
-                                {shouldShowTaskBadge(centerTaskStats, { showInherited: false }) && (
+                                {shouldShowTaskBadge(centerTaskStats, centerTaskBadgeOptions) && (
                                   <span
                                     className={`task-badge ${getTaskBadgeTone(centerTaskStats)} ${centerTaskStats.directOpen === 0 ? 'is-inherited' : ''}`}
                                   >
-                                    {getTaskBadgeLabel(centerTaskStats, { showInherited: false })}
+                                    {getTaskBadgeLabel(centerTaskStats, centerTaskBadgeOptions)}
                                   </span>
                                 )}
                                 <h2 className="mandala-title">{centerContent.title}</h2>
@@ -5796,7 +5801,15 @@ function App() {
                           const actionDragKey = getDraggableCardKey(actionDragTarget)
                           const isActionDragOver = dragOverKey === actionDragKey
                           const isActionDragSource = isSameDraggableTarget(dragSourceTarget, actionDragTarget)
-                          const isLeafAction = !activeDrillNodeExact?.children[gridItem.actionId]
+                          const actionChildNode = activeDrillNodeExact?.children[gridItem.actionId]
+                          const hasVisibleChildLayer = Boolean(
+                            actionChildNode &&
+                              (actionChildNode.visibleCore || ACTION_LAYOUT.some((action) => actionChildNode.visibleActions[action.id])),
+                          )
+                          const isLeafAction = !hasVisibleChildLayer
+                          const actionTaskBadgeOptions = isLeafAction
+                            ? { showDirectFullStatus: true, showInherited: false }
+                            : { showDirectFullStatus: true }
 
                           return (
                             <article
@@ -5809,11 +5822,11 @@ function App() {
                               onDrop={(event) => handleCardDrop(event, actionDragTarget)}
                               onDragEnd={handleCardDragEnd}
                             >
-                              {shouldShowTaskBadge(actionTaskStats, { showDirectFullStatus: isLeafAction }) && (
+                              {shouldShowTaskBadge(actionTaskStats, actionTaskBadgeOptions) && (
                                 <span
                                   className={`task-badge ${getTaskBadgeTone(actionTaskStats)} ${actionTaskStats.directOpen === 0 ? 'is-inherited' : ''}`}
                                 >
-                                  {getTaskBadgeLabel(actionTaskStats, { showDirectFullStatus: isLeafAction })}
+                                  {getTaskBadgeLabel(actionTaskStats, actionTaskBadgeOptions)}
                                 </span>
                               )}
                               <h2 className="mandala-title">{actionContent.title}</h2>
