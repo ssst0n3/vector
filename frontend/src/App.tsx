@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import DataSourceSettingsPanel from './components/DataSourceSettingsPanel'
+import { OW64_BOARD_STORE, OW64_META_STORE, readOw64Record, writeOw64Record, deleteOw64Record } from './storage'
 import './App.css'
 
 const PROJECT_STATUS_OPTIONS = ['Active', 'Planning', 'In review', 'Paused', 'Done'] as const
@@ -147,6 +148,23 @@ type Ow64Board = {
   visiblePillars: Record<PillarId, boolean>
 }
 
+// localStorage 持久化专用：只保留与重建默认值的差异，缺失字段由 mergeBoardWithDefault 补全。
+type PersistableDrillNode = {
+  core?: CellContent
+  actions?: Partial<Record<ActionId, CellContent>>
+  children?: Partial<Record<ActionId, PersistableDrillNode>>
+  visibleCore?: boolean
+  visibleActions?: Partial<Record<ActionId, boolean>>
+}
+
+type PersistableOw64Board = {
+  core?: CellContent
+  pillars?: Partial<Record<PillarId, CellContent>>
+  drills?: Partial<Record<PillarId, PersistableDrillNode>>
+  visibleCore?: boolean
+  visiblePillars?: Partial<Record<PillarId, boolean>>
+}
+
 type CsvRow = {
   rowType: 'root-core' | 'root-pillar' | 'drill-core' | 'drill-action'
   marker: string
@@ -213,6 +231,16 @@ const DATA_SOURCE_GIST_TOKEN_STORAGE_KEY = 'ow64:data-source:gist:token'
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'ow64:sidebar:collapsed'
 const TASKS_STORAGE_KEY = 'ow64:tasks:v1'
 const DEFAULT_GIST_FILE_NAME = 'ow64-data.json'
+
+const writeLocalStorageValue = (key: string, value: string): boolean => {
+  try {
+    window.localStorage.setItem(key, value)
+    return true
+  } catch (error) {
+    console.warn(`[ow64] 写入 localStorage 失败（key: ${key}），本次更改不会被持久化，可清理浏览器存储空间后重试。`, error)
+    return false
+  }
+}
 
 const PILLAR_CELLS = ROOT_CELLS.filter((cell): cell is Extract<RootCell, { role: 'pillar' }> => cell.role === 'pillar')
 
@@ -840,6 +868,103 @@ const mergeBoardWithDefault = (incoming: unknown): Ow64Board => {
   return defaults
 }
 
+const isSameCellContent = (left: CellContent, right: CellContent): boolean =>
+  left.title === right.title && left.subtitle === right.subtitle
+
+const toPersistableDrillNode = (node: DrillNode, base: DrillNode): PersistableDrillNode => {
+  const persistable: PersistableDrillNode = {}
+
+  if (!isSameCellContent(node.core, base.core)) {
+    persistable.core = {
+      title: node.core.title,
+      subtitle: node.core.subtitle,
+    }
+  }
+
+  if (node.visibleCore !== base.visibleCore) {
+    persistable.visibleCore = node.visibleCore
+  }
+
+  for (const action of ACTION_LAYOUT) {
+    if (!isSameCellContent(node.actions[action.id], base.actions[action.id])) {
+      persistable.actions = persistable.actions ?? {}
+      persistable.actions[action.id] = {
+        title: node.actions[action.id].title,
+        subtitle: node.actions[action.id].subtitle,
+      }
+    }
+
+    if (node.visibleActions[action.id] !== base.visibleActions[action.id]) {
+      persistable.visibleActions = persistable.visibleActions ?? {}
+      persistable.visibleActions[action.id] = node.visibleActions[action.id]
+    }
+  }
+
+  for (const action of ACTION_LAYOUT) {
+    const child = node.children[action.id]
+    if (!child) {
+      continue
+    }
+
+    // 与 mergeBoardWithDefault 的子节点基准保持一致：createDrillNode(父 action 内容, 父 action 标题)。
+    const childBase = createDrillNode(node.actions[action.id], `${node.actions[action.id].title}`)
+    const persistableChild = toPersistableDrillNode(child, childBase)
+    if (Object.keys(persistableChild).length > 0) {
+      persistable.children = persistable.children ?? {}
+      persistable.children[action.id] = persistableChild
+    }
+  }
+
+  return persistable
+}
+
+const toPersistableBoard = (board: Ow64Board): PersistableOw64Board => {
+  const defaults = createDefaultOw64Board()
+  const persistable: PersistableOw64Board = {}
+
+  if (!isSameCellContent(board.core, defaults.core)) {
+    persistable.core = {
+      title: board.core.title,
+      subtitle: board.core.subtitle,
+    }
+  }
+
+  if (board.visibleCore !== defaults.visibleCore) {
+    persistable.visibleCore = board.visibleCore
+  }
+
+  for (const pillar of PILLAR_CELLS) {
+    if (!isSameCellContent(board.pillars[pillar.id], defaults.pillars[pillar.id])) {
+      persistable.pillars = persistable.pillars ?? {}
+      persistable.pillars[pillar.id] = {
+        title: board.pillars[pillar.id].title,
+        subtitle: board.pillars[pillar.id].subtitle,
+      }
+    }
+
+    if (board.visiblePillars[pillar.id] !== defaults.visiblePillars[pillar.id]) {
+      persistable.visiblePillars = persistable.visiblePillars ?? {}
+      persistable.visiblePillars[pillar.id] = board.visiblePillars[pillar.id]
+    }
+
+    // 与 mergeBoardWithDefault 的顶层基准保持一致：drill core 跟随合并后的 pillar 内容。
+    const drillBase: DrillNode = {
+      ...defaults.drills[pillar.id],
+      core: {
+        title: board.pillars[pillar.id].title,
+        subtitle: board.pillars[pillar.id].subtitle,
+      },
+    }
+    const persistableDrill = toPersistableDrillNode(board.drills[pillar.id], drillBase)
+    if (Object.keys(persistableDrill).length > 0) {
+      persistable.drills = persistable.drills ?? {}
+      persistable.drills[pillar.id] = persistableDrill
+    }
+  }
+
+  return persistable
+}
+
 const migrateLegacyBoard = (incoming: unknown): Ow64Board => {
   const defaults = createDefaultOw64Board()
   if (!incoming || typeof incoming !== 'object') {
@@ -897,7 +1022,8 @@ const migrateLegacyBoard = (incoming: unknown): Ow64Board => {
   return defaults
 }
 
-const loadOw64Board = (projectId: ProjectId): Ow64Board => {
+// 迁移用：从 localStorage 读看板（新 key 优先，其次 legacy 格式），不产生写入。
+const readOw64BoardFromLocalStorage = (projectId: ProjectId): Ow64Board => {
   if (typeof window === 'undefined') {
     return createDefaultOw64Board()
   }
@@ -917,23 +1043,19 @@ const loadOw64Board = (projectId: ProjectId): Ow64Board => {
   }
 
   try {
-    const migrated = migrateLegacyBoard(JSON.parse(rawLegacy))
-    window.localStorage.setItem(`${NEW_STORAGE_KEY_PREFIX}${projectId}`, JSON.stringify(migrated))
-    return migrated
+    return migrateLegacyBoard(JSON.parse(rawLegacy))
   } catch {
     return createDefaultOw64Board()
   }
 }
 
 const persistOw64Board = (projectId: ProjectId, board: Ow64Board) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.localStorage.setItem(`${NEW_STORAGE_KEY_PREFIX}${projectId}`, JSON.stringify(board))
+  void writeOw64Record(OW64_BOARD_STORE, projectId, toPersistableBoard(board))
 }
 
 const removeOw64Board = (projectId: ProjectId) => {
+  void deleteOw64Record(OW64_BOARD_STORE, projectId)
+
   if (typeof window === 'undefined') {
     return
   }
@@ -971,12 +1093,55 @@ const sanitizeProjectItem = (project: ProjectItem): ProjectItem | null => {
   }
 }
 
-const persistProjectList = (projects: ProjectItem[]) => {
-  if (typeof window === 'undefined') {
-    return
+const OW64_PROJECTS_META_KEY = 'projects'
+const OW64_TASKS_META_KEY = 'tasks'
+
+const sanitizeProjectItems = (value: unknown): ProjectItem[] => {
+  if (!Array.isArray(value)) {
+    return []
   }
 
-  window.localStorage.setItem(PROJECT_LIST_STORAGE_KEY, JSON.stringify(projects))
+  const deduped = new Set<string>()
+  const projects: ProjectItem[] = []
+  for (const item of value) {
+    if (!isProjectItem(item)) {
+      continue
+    }
+
+    const sanitized = sanitizeProjectItem(item)
+    if (!sanitized || deduped.has(sanitized.id)) {
+      continue
+    }
+
+    deduped.add(sanitized.id)
+    projects.push(sanitized)
+  }
+
+  return projects
+}
+
+const persistProjectList = (projects: ProjectItem[]) => {
+  void writeOw64Record(OW64_META_STORE, OW64_PROJECTS_META_KEY, projects)
+}
+
+const sanitizeTaskItems = (value: unknown): TaskItem[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const deduped = new Set<string>()
+  const tasks: TaskItem[] = []
+  for (const item of value) {
+    const sanitized = sanitizeTaskItem(item)
+    if (!sanitized || deduped.has(sanitized.id)) {
+      continue
+    }
+
+    deduped.add(sanitized.id)
+    tasks.push(sanitized)
+  }
+
+  return tasks
 }
 
 const loadTasksFromLocalStorage = (): TaskItem[] => {
@@ -990,35 +1155,14 @@ const loadTasksFromLocalStorage = (): TaskItem[] => {
   }
 
   try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-
-    const deduped = new Set<string>()
-    const tasks: TaskItem[] = []
-    for (const item of parsed) {
-      const sanitized = sanitizeTaskItem(item)
-      if (!sanitized || deduped.has(sanitized.id)) {
-        continue
-      }
-
-      deduped.add(sanitized.id)
-      tasks.push(sanitized)
-    }
-
-    return tasks
+    return sanitizeTaskItems(JSON.parse(raw) as unknown)
   } catch {
     return []
   }
 }
 
 const persistTasks = (tasks: TaskItem[]) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks))
+  void writeOw64Record(OW64_META_STORE, OW64_TASKS_META_KEY, tasks)
 }
 
 const loadLegacySourceUrl = (): string | null => {
@@ -1114,7 +1258,7 @@ const persistConfiguredSourceType = (sourceType: DataSourceType) => {
     return
   }
 
-  window.localStorage.setItem(DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY, sourceType)
+  writeLocalStorageValue(DATA_SOURCE_ACTIVE_TYPE_STORAGE_KEY, sourceType)
 }
 
 const persistConfiguredS3SourceUrl = (source: string | null) => {
@@ -1127,7 +1271,7 @@ const persistConfiguredS3SourceUrl = (source: string | null) => {
     return
   }
 
-  window.localStorage.setItem(DATA_SOURCE_S3_URL_STORAGE_KEY, source)
+  writeLocalStorageValue(DATA_SOURCE_S3_URL_STORAGE_KEY, source)
 }
 
 const persistConfiguredGistSourceUrl = (source: string | null) => {
@@ -1140,7 +1284,7 @@ const persistConfiguredGistSourceUrl = (source: string | null) => {
     return
   }
 
-  window.localStorage.setItem(DATA_SOURCE_GIST_URL_STORAGE_KEY, source)
+  writeLocalStorageValue(DATA_SOURCE_GIST_URL_STORAGE_KEY, source)
 }
 
 const persistConfiguredGistToken = (token: string | null) => {
@@ -1153,7 +1297,7 @@ const persistConfiguredGistToken = (token: string | null) => {
     return
   }
 
-  window.localStorage.setItem(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY, token)
+  writeLocalStorageValue(DATA_SOURCE_GIST_TOKEN_STORAGE_KEY, token)
 }
 
 const loadSidebarCollapsedPreference = (): boolean => {
@@ -1178,7 +1322,7 @@ const persistSidebarCollapsedPreference = (collapsed: boolean): void => {
     return
   }
 
-  window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? 'true' : 'false')
+  writeLocalStorageValue(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? 'true' : 'false')
 }
 
 const loadProjectList = (): ProjectItem[] => {
@@ -1187,37 +1331,15 @@ const loadProjectList = (): ProjectItem[] => {
   }
 
   const raw = window.localStorage.getItem(PROJECT_LIST_STORAGE_KEY)
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (!Array.isArray(parsed)) {
-        return []
-      }
-
-      const deduped = new Set<string>()
-      const projects: ProjectItem[] = []
-
-      for (const item of parsed) {
-        if (!isProjectItem(item)) {
-          continue
-        }
-
-        const sanitized = sanitizeProjectItem(item)
-        if (!sanitized || deduped.has(sanitized.id)) {
-          continue
-        }
-
-        deduped.add(sanitized.id)
-        projects.push(sanitized)
-      }
-
-      return projects
-    } catch {
-      return []
-    }
+  if (!raw) {
+    return []
   }
 
-  return []
+  try {
+    return sanitizeProjectItems(JSON.parse(raw) as unknown)
+  } catch {
+    return []
+  }
 }
 
 type InitialProjectData = {
@@ -1508,17 +1630,63 @@ const buildSyncFingerprint = (data: InitialProjectData): string => {
   })
 }
 
-const loadInitialProjectDataFromLocalStorage = (): InitialProjectData => {
+const migrateLocalStorageDataToIdb = async (): Promise<InitialProjectData> => {
   const projects = loadProjectList()
+  const boards: Record<ProjectId, Ow64Board> = {}
+  for (const project of projects) {
+    boards[project.id] = readOw64BoardFromLocalStorage(project.id)
+  }
+
   const projectIdSet = new Set(projects.map((project) => project.id))
-  const boards = projects.reduce(
-    (acc, project) => {
-      acc[project.id] = loadOw64Board(project.id)
-      return acc
-    },
-    {} as Record<ProjectId, Ow64Board>,
-  )
   const tasks = loadTasksFromLocalStorage().filter((task) => projectIdSet.has(task.projectId))
+
+  // 全部写入 IDB 成功后，才删除 localStorage 旧 key（删除即“迁移已完成”的标志；失败时旧数据仍是唯一副本）。
+  let migratedOk = await writeOw64Record(OW64_META_STORE, OW64_PROJECTS_META_KEY, projects)
+  migratedOk = (await writeOw64Record(OW64_META_STORE, OW64_TASKS_META_KEY, tasks)) && migratedOk
+  for (const project of projects) {
+    const boardOk = await writeOw64Record(OW64_BOARD_STORE, project.id, toPersistableBoard(boards[project.id]))
+    migratedOk = boardOk && migratedOk
+  }
+
+  if (migratedOk && typeof window !== 'undefined') {
+    window.localStorage.removeItem(PROJECT_LIST_STORAGE_KEY)
+    window.localStorage.removeItem(TASKS_STORAGE_KEY)
+    for (const project of projects) {
+      window.localStorage.removeItem(`${NEW_STORAGE_KEY_PREFIX}${project.id}`)
+      window.localStorage.removeItem(`${LEGACY_STORAGE_KEY_PREFIX}${project.id}`)
+    }
+  }
+
+  return {
+    projects,
+    boards,
+    selectedProjectId: projects[0]?.id ?? null,
+    tasks,
+  }
+}
+
+const loadInitialProjectData = async (): Promise<InitialProjectData> => {
+  const storedProjects = await readOw64Record<unknown>(OW64_META_STORE, OW64_PROJECTS_META_KEY)
+
+  if (storedProjects === undefined) {
+    // IDB 尚无数据：首次使用，或从 localStorage 旧版本升级，执行一次性迁移。
+    return migrateLocalStorageDataToIdb()
+  }
+
+  const projects = sanitizeProjectItems(storedProjects)
+  const [storedTasks, ...storedBoards] = await Promise.all([
+    readOw64Record<unknown>(OW64_META_STORE, OW64_TASKS_META_KEY),
+    ...projects.map((project) => readOw64Record<unknown>(OW64_BOARD_STORE, project.id)),
+  ])
+
+  const boards: Record<ProjectId, Ow64Board> = {}
+  projects.forEach((project, index) => {
+    const stored = storedBoards[index]
+    boards[project.id] = stored === undefined ? createDefaultOw64Board() : mergeBoardWithDefault(stored)
+  })
+
+  const projectIdSet = new Set(projects.map((project) => project.id))
+  const tasks = sanitizeTaskItems(storedTasks).filter((task) => projectIdSet.has(task.projectId))
 
   return {
     projects,
@@ -2201,7 +2369,13 @@ const CONFIGURED_SOURCE_TYPE = loadConfiguredSourceType()
 const CONFIGURED_S3_SOURCE_URL = loadConfiguredS3SourceUrl()
 const CONFIGURED_GIST_SOURCE_URL = loadConfiguredGistSourceUrl()
 const CONFIGURED_GIST_TOKEN = loadConfiguredGistToken()
-const INITIAL_PROJECT_DATA = loadInitialProjectDataFromLocalStorage()
+// 首帧先以空数据渲染，真实数据由 hydrate effect 异步从 IndexedDB 灌入（与 S3/Gist 源同一条水合路径）。
+const INITIAL_PROJECT_DATA: InitialProjectData = {
+  projects: [],
+  boards: {},
+  selectedProjectId: null,
+  tasks: [],
+}
 
 const isSameTarget = (left: EditingTarget | null, right: EditingTarget) => {
   if (!left) {
@@ -3162,7 +3336,7 @@ function App() {
   const effectiveSourceType = querySourceType ?? activeSourceType
   const isQuerySourceOverride = Boolean(querySourceTarget)
   const activeSourceSaveLabel =
-    effectiveSourceType === 'local' ? 'localStorage 自动保存' : effectiveSourceType === 's3' ? '保存到 S3' : '保存到 Gist'
+    effectiveSourceType === 'local' ? '本地存储自动保存' : effectiveSourceType === 's3' ? '保存到 S3' : '保存到 Gist'
   const isSavingToActiveSource =
     effectiveSourceType === 's3' ? isSavingToS3Source : effectiveSourceType === 'gist' ? isSavingToGistSource : false
   const isSaveToActiveSourceDisabled =
@@ -3187,7 +3361,7 @@ function App() {
     if (effectiveSourceType === 'local') {
       return {
         tone: 'muted' as const,
-        text: '同步状态：localStorage 自动保存',
+        text: '同步状态：本地存储自动保存',
       }
     }
 
@@ -3287,8 +3461,8 @@ function App() {
       const queryTarget = querySourceUrl ? resolveDataSourceTarget(querySourceUrl) : null
 
       if (!queryTarget && effectiveSourceType === 'local') {
-        applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
-        setLocalSourceFeedback('加载成功：当前使用 localStorage（自动保存）。')
+        applyInitialProjectData(await loadInitialProjectData())
+        setLocalSourceFeedback('加载成功：当前使用本地 IndexedDB 存储（自动保存）。')
         return
       }
 
@@ -3297,11 +3471,11 @@ function App() {
         ((effectiveSourceType === 's3' && !effectiveS3SourceUrl) ||
           (effectiveSourceType === 'gist' && !effectiveGistSourceUrl))
       ) {
-        applyInitialProjectData(loadInitialProjectDataFromLocalStorage())
+        applyInitialProjectData(await loadInitialProjectData())
         if (effectiveSourceType === 'gist') {
-          setGistSourceFeedback('加载失败：未配置 Gist 地址，已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：未配置 Gist 地址，已回退到本地存储。')
         } else {
-          setS3SourceFeedback('加载失败：未配置 S3 地址，已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：未配置 S3 地址，已回退到本地存储。')
         }
         return
       }
@@ -3347,11 +3521,11 @@ function App() {
         }))
       }
 
-      const localData = loadInitialProjectDataFromLocalStorage()
+      const localData = await loadInitialProjectData()
       if (sourceData.status === 'not-found') {
         if (effectiveSourceType === 'gist') {
           applyInitialProjectData(localData)
-          setGistSourceFeedback('加载失败：Gist 不存在，已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：Gist 不存在，已回退到本地存储。')
           return
         }
 
@@ -3362,31 +3536,31 @@ function App() {
 
         if (created.status === 'ok') {
           applyInitialProjectData(localData)
-          setS3SourceFeedback('加载成功：S3 地址不存在，已自动创建并加载 localStorage 数据。')
+          setS3SourceFeedback('加载成功：S3 地址不存在，已自动创建并加载本地数据。')
           return
         }
 
         applyInitialProjectData(localData)
         if (created.status === 'auth-required') {
-          setS3SourceFeedback('加载失败：S3 地址不存在且创建失败（需要认证凭据），已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 地址不存在且创建失败（需要认证凭据），已回退到本地存储。')
           return
         }
 
         if (created.status === 'forbidden') {
-          setS3SourceFeedback('加载失败：S3 地址不存在且创建失败（权限不足），已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 地址不存在且创建失败（权限不足），已回退到本地存储。')
           return
         }
 
-        setS3SourceFeedback('加载失败：S3 地址不存在且创建失败，已回退到 localStorage。')
+        setS3SourceFeedback('加载失败：S3 地址不存在且创建失败，已回退到本地存储。')
         return
       }
 
       if (sourceData.status === 'auth-required') {
         applyInitialProjectData(localData)
         if (effectiveSourceType === 'gist') {
-          setGistSourceFeedback('加载失败：Gist 访问需要 GitHub Token（或 Token 无效），已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：Gist 访问需要 GitHub Token（或 Token 无效），已回退到本地存储。')
         } else {
-          setS3SourceFeedback('加载失败：S3 数据源访问需要认证，已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 数据源访问需要认证，已回退到本地存储。')
         }
         return
       }
@@ -3394,18 +3568,18 @@ function App() {
       if (sourceData.status === 'forbidden') {
         applyInitialProjectData(localData)
         if (effectiveSourceType === 'gist') {
-          setGistSourceFeedback('加载失败：Gist 访问被拒绝（可能权限不足或触发限流），已回退到 localStorage。')
+          setGistSourceFeedback('加载失败：Gist 访问被拒绝（可能权限不足或触发限流），已回退到本地存储。')
         } else {
-          setS3SourceFeedback('加载失败：S3 数据源访问被拒绝，已回退到 localStorage。')
+          setS3SourceFeedback('加载失败：S3 数据源访问被拒绝，已回退到本地存储。')
         }
         return
       }
 
       applyInitialProjectData(localData)
       if (effectiveSourceType === 'gist') {
-        setGistSourceFeedback('加载失败：Gist 数据源加载失败，已回退到 localStorage。')
+        setGistSourceFeedback('加载失败：Gist 数据源加载失败，已回退到本地存储。')
       } else {
-        setS3SourceFeedback('加载失败：S3 数据源加载失败，已回退到 localStorage。')
+        setS3SourceFeedback('加载失败：S3 数据源加载失败，已回退到本地存储。')
       }
     }
 
@@ -3574,7 +3748,7 @@ function App() {
       setConfiguredS3SourceUrl('')
       persistConfiguredS3SourceUrl(null)
       setQuerySourceUrl(syncSourceUrlToSearchParams(null))
-      setS3SourceFeedback('已清空 S3 地址，当前使用 localStorage。')
+      setS3SourceFeedback('已清空 S3 地址，当前使用本地存储。')
       return
     }
 
@@ -3604,7 +3778,7 @@ function App() {
       setConfiguredGistSourceUrl('')
       persistConfiguredGistSourceUrl(null)
       setQuerySourceUrl(syncSourceUrlToSearchParams(null))
-      setGistSourceFeedback('已清空 Gist 地址，当前使用 localStorage。')
+      setGistSourceFeedback('已清空 Gist 地址，当前使用本地存储。')
       return
     }
 
@@ -3715,7 +3889,7 @@ function App() {
       return
     }
 
-    setLocalSourceFeedback('当前使用 localStorage 自动保存，无需手动保存。')
+    setLocalSourceFeedback('当前使用本地存储自动保存，无需手动保存。')
   }
 
   const handleActiveSourceTypeChange = (nextType: DataSourceType) => {
@@ -3723,7 +3897,7 @@ function App() {
     persistConfiguredSourceType(nextType)
     setQuerySourceUrl(syncSourceUrlToSearchParams(null))
     if (nextType === 'local') {
-      setLocalSourceFeedback('已切换到 localStorage（自动保存）。')
+      setLocalSourceFeedback('已切换到本地 IndexedDB 存储（自动保存）。')
       return
     }
 

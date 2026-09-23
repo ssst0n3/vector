@@ -39,7 +39,7 @@ function DataSourceSettingsPanel({
         <h2 className="panel-title">Data Source</h2>
         <p className="panel-desc">S3 与 GitHub Gist 配置已拆分管理，Gist 会按项目自动写入对应文件（projectId.json）。</p>
         <p className="mandala-path">
-          当前激活：{activeSourceType === 'local' ? 'localStorage' : activeSourceType === 's3' ? 'S3' : 'Gist'}
+          当前激活：{activeSourceType === 'local' ? '本地存储（IndexedDB）' : activeSourceType === 's3' ? 'S3' : 'Gist'}
           {isQuerySourceOverride ? '（URL src 参数临时覆盖）' : ''}
         </p>
 
@@ -51,7 +51,7 @@ function DataSourceSettingsPanel({
             role="radio"
             aria-checked={activeSourceType === 'local'}
           >
-            使用 localStorage
+            使用本地存储
           </button>
           <button
             type="button"
@@ -75,8 +75,8 @@ function DataSourceSettingsPanel({
       </article>
 
       <article className="panel-card">
-        <h3 className="panel-subtitle">localStorage（自动保存）</h3>
-        <p className="panel-desc">选择 localStorage 后，项目数据会在当前浏览器自动持久化，无需手动保存。</p>
+        <h3 className="panel-subtitle">本地存储（IndexedDB，自动保存）</h3>
+        <p className="panel-desc">选择本地存储后，项目数据会在当前浏览器自动持久化，无需手动保存。</p>
         {localSourceFeedback && <p className="mandala-path">{localSourceFeedback}</p>}
       </article>
 
